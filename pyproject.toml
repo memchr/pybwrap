@@ -1,0 +1,15 @@
+[project]
+name = "pybwrap"
+version = "0.0.1"
+description = "Bubblewrap python bindings"
+readme = "README.md"
+dependencies = []
+requires-python = ">=3.12"
+
+[project.scripts]
+sandbox = "pybwrap.cli:main"
+
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
