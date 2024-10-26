@@ -267,7 +267,7 @@ class Bwrap:
 
     def symlink(self, *symlink_spec: tuple[str]):
         for src, dest in symlink_spec:
-            self.args.extend(["--symlink", str(src), str(dest)])
+            self.args.extend(["--symlink", str(src), str(self.resolve_path(dest))])
 
     def bind(self, src: str, dest: Optional[str] = None, mode: BindMode = BindMode.RO):
         dest: Path = Path(dest or src)
@@ -275,12 +275,28 @@ class Bwrap:
         if not dest.is_absolute():
             self.logger.debug("bind: dest relative to host cwd")
             dest = self.cwd / dest
-        # dest contains host home
-        if dest.is_relative_to(self._host_home):
-            self.logger.debug("bind: dest relative to host home")
-            dest = self.home / dest.relative_to(self._host_home)
 
-        self.args.extend(self.format_bind_args(src, str(dest), mode))
+        self.args.extend(self.format_bind_args(src, str(self.resolve_path(dest)), mode))
+
+    def dir(self, *dirs: str):
+        for dir in dirs:
+            self.args.extend(("--dir", str(self.resolve_path(dir))))
+
+    def tmpfs(self, *paths: str):
+        for fs in paths:
+            self.args.extend(("--tmpfs", str(self.resolve_path(fs))))
+
+    def file(self, content: str, dest: str, perms=None):
+        """Copy from file descriptor to dest
+
+        Default permission is 0666
+        """
+        if perms:
+            self.args.extend(("--perms", str(perms)))
+        r, w = os.pipe()
+        os.set_inheritable(r, True)
+        os.write(w, content.encode())
+        self.args.extend(("--file", str(r), str(self.resolve_path(dest))))
 
     def bind_many(self, *bind_specs: Union[str, dict], mode=BindMode.RO):
         for spec in bind_specs:
@@ -314,26 +330,6 @@ class Bwrap:
             elif isinstance(spec, dict):
                 self.home_bind(**spec)
 
-    def dir(self, *dirs: str):
-        for dir in dirs:
-            self.args.extend(("--dir", str(dir)))
-
-    def tmpfs(self, *paths: str):
-        for fs in paths:
-            self.args.extend(("--tmpfs", str(fs)))
-
-    def file(self, content: str, dest: str, perms=None):
-        """Copy from file descriptor to dest
-
-        Default permission is 0666
-        """
-        if perms:
-            self.args.extend(("--perms", str(perms)))
-        r, w = os.pipe()
-        os.set_inheritable(r, True)
-        os.write(w, content.encode())
-        self.args.extend(("--file", str(r), str(dest)))
-
     def setenv(self, **kwargs):
         for var, value in kwargs.items():
             if value is None or var == "LC_ALL":
@@ -362,12 +358,13 @@ class Bwrap:
 
     def _debug_print_args(self, command):
         if self.logger.level <= logging.DEBUG:
-            args = self.args + command
+            args = self.args
             indices = [i for i, x in enumerate(args) if x.startswith("--")]
             for a in (
                 " ".join(args[i:j]) for i, j in zip(indices, indices[1:] + [len(args)])
             ):
                 self.logger.debug(f"arg: {a}")
+            self.logger.debug(f"arg: {command}")
 
     def chdir(self, dest: Optional[str] = None):
         """Change directory to dest
@@ -379,6 +376,13 @@ class Bwrap:
             dest = str(self.cwd)
         self.args.extend(("--chdir", dest))
 
+    def resolve_path(self, path: str) -> Path:
+        """Fix path that contains host home"""
+        path_ = Path(path)
+        if path_.is_relative_to(self._host_home):
+            path_ = self.home / path_.relative_to(self._host_home)
+        return path_
+
     def exec(self, command: list[str]):
         """Start the bwrap container
 
@@ -386,6 +390,13 @@ class Bwrap:
             command (list[str]): commands to run. can be prepended with
             addtional bwrap arguments
         """
+
+        # fix pathes in command
+        host_home = str(self._host_home)
+        for i, v in enumerate(command):
+            if v[0] == "/" and host_home in v:
+                command[i] = str(self.resolve_path(v))
+
         self._debug_print_args(command)
 
         # Pass arguments in a file descriptor
