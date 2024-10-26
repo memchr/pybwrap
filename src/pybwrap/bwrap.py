@@ -30,11 +30,10 @@ class Bwrap:
         "pkcs11", "povray", "profile", "profile.d", "protocols", "pulse",
         "rc_keymaps", "rc_maps.cfg", "request-key.conf", "request-key.d",
         "resolv.conf", "sane.d", "sasl2", "securetty", "security", "sensors.d",
-        "sensors3.conf", "services", "shells", "ssl", "subgid", "subuid",
-        "timidity", "tmpfiles.d", "tpm2-tss", "trusted-key.key", "ts.conf",
-        "vdpau_wrapper.cfg", "vulkan", "wgetrc", "whois.conf", "wpa_supplicant",
-        "xattr.conf", "xdg", "xinetd.d", "xml", "libreoffice", "java21-openjdk",
-        "java11-openjdk"
+        "sensors3.conf", "services", "shells", "ssl", "timidity", "tmpfiles.d",
+        "tpm2-tss", "trusted-key.key", "ts.conf", "vdpau_wrapper.cfg", "vulkan",
+        "wgetrc", "whois.conf", "wpa_supplicant", "xattr.conf", "xdg",
+        "xinetd.d", "xml", "libreoffice", "java21-openjdk", "java11-openjdk"
     )  # fmt: skip
     _DEFAULT_PATHS = (
         ".local/bin",
@@ -243,6 +242,8 @@ class Bwrap:
         self.file(group_file, "/etc/group")
         self.file(hosts_file, "/etc/hosts")
         self.file(self.hostname, "/etc/hostname")
+        self.file(f"{self.user}:100000:65536\n", "/etc/subuid")
+        self.file(f"{self.user}:100000:65536\n", "/etc/subgid")
 
     @staticmethod
     def format_bind_args(src, dest, mode):
