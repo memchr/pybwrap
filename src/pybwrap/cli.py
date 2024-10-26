@@ -53,6 +53,7 @@ class BwrapArgumentParser(argparse.ArgumentParser):
             self.add_flag_keep_user()
             self.add_flag_keep_hostname()
             self.add_flag_unshare_net()
+            self.add_flag_mangohud()
             self.add_flag_rootfs()
             self.add_flag_locale()
             self.add_arg_command()
@@ -67,6 +68,7 @@ class BwrapArgumentParser(argparse.ArgumentParser):
         cwd: bool
         unshare_net: bool
         desktop: bool
+        mangohud: bool
         locale: str
         v: tuple[str]
 
@@ -198,6 +200,11 @@ class BwrapArgumentParser(argparse.ArgumentParser):
             help="Create a new network namespace.",
         )
 
+    def add_flag_mangohud(self):
+        self.add_argument(
+            "-m", "--mangohud", action="store_true", help="Enable mangohud."
+        )
+
     def add_arg_command(self):
         self.add_argument(
             "command",
@@ -255,6 +262,8 @@ def main():
         sandbox.desktop()
     if args.locale is not None:
         sandbox.locale(args.locale)
+    if args.mangohud:
+        sandbox.mangohud(enable=True)
     sandbox.home_bind_many("downloads", "tmp", mode=BindMode.RW)
     if args.v:
         handle_binds(args.v, sandbox.bind)
