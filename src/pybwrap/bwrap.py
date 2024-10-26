@@ -463,9 +463,10 @@ class BwrapSandbox(Bwrap):
         self.audio()
 
     @feature(depends=("gpu", "wayland", "x11"))
-    def mangohud(self):
+    def mangohud(self, enable=True):
         self.home_bind(".config/MangoHud")
-        self.setenv(MANGOHUD=1)
+        if enable:
+            self.setenv(MANGOHUD=1)
 
     @feature()
     def locale(self, newlocale):
