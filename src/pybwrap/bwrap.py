@@ -428,13 +428,20 @@ class BwrapSandbox(Bwrap):
         )
 
     @feature()
-    def gpu(self):
+    def gpu(self, shader_cache=True):
         self.bind_many(
             "/dev/dri",
             *glob("/dev/nvidia*"),
             mode=BindMode.DEV,
         )
         self.keepenv("__GL_THREADED_OPTIMIZATION")
+        if shader_cache:
+            self.bind_many(
+                "$XDG_CACHE_HOME/mesa_shader_cache",
+                "$XDG_CACHE_HOME/radv_builtin_shaders64",
+                "$XDG_CACHE_HOME/nv",
+                "$XDG_CACHE_HOME/nvidia",
+            )
 
     @feature(depends=("gpu",))
     def nvidia(self):
