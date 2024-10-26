@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import patch
 from pathlib import Path
+
+from pyparsing import restOfLine
 from pybwrap import Bwrap, BindMode
 
 
@@ -11,7 +13,7 @@ class TestBwrap(unittest.TestCase):
             user="testuser",
             hostname="testhost",
             loglevel=10,
-            home=Path("/home/testuser"),
+            profile=Path("/home/testuser"),
             etc_binds=("group", "passwd", "hostname"),
         )
         self.args = " ".join(self.bwrap.args)
@@ -81,3 +83,36 @@ class TestBwrap(unittest.TestCase):
             self.bwrap.file(content, dest)
             mock_write.assert_called_once_with(4, content.encode())
             self.assertIn(dest, self.bwrap.args)
+
+    def test_bind_relative_path_to_host_home(self):
+        self.bwrap.bind("/src", str(Path.home() / "dest"))
+        self.assertIn(
+            f"--ro-bind-try /src {str(self.bwrap.home / "dest")}",
+            " ".join(self.bwrap.args),
+        )
+
+    def test_resolve_path(self):
+        home = Path.home()
+        self.assertEqual(
+            self.bwrap.resolve_path(str(home)),
+            self.bwrap.home,
+        )
+        self.assertEqual(
+            self.bwrap.resolve_path(str(home / "src")),
+            self.bwrap.home / "src",
+        )
+        self.assertEqual(
+            self.bwrap.resolve_path("/src"),
+            Path("/src"),
+        )
+        self.assertEqual(
+            self.bwrap.resolve_path("src"),
+            Path("src"),
+        )
+
+    def test_bind_relative_path(self):
+        self.bwrap.bind("/src", "dest")
+        self.assertIn(
+            f"--ro-bind-try /src {str(self.bwrap.resolve_path(Path.cwd()) / "dest")}",
+            " ".join(self.bwrap.args),
+        )
