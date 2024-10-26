@@ -20,8 +20,8 @@ class Bwrap:
         "bash.bashrc", "bash_completion.d", "binfmt.d", "bluetooth",
         "ca-certificates", "conf.d", "dconf", "default", "environment",
         "ethertypes", "fonts", "fuse.conf", "gai.conf", "grc.conf", "grc.fish",
-        "grc.zsh", "group", "gtk-2.0", "gtk-3.0", "host.conf", "inputrc",
-        "issue", "java-openjdk", "ld.so.cache", "ld.so.conf", "ld.so.conf.d",
+        "grc.zsh",  "gtk-2.0", "gtk-3.0", "host.conf", "inputrc", "issue",
+        "java-openjdk", "ld.so.cache", "ld.so.conf", "ld.so.conf.d",
         "libao.conf", "libinput", "libnl", "libpaper.d", "libva.conf",
         "locale.conf", "localtime", "login.defs", "lsb-release", "man_db.conf",
         "mime.types", "mono", "mtab", "named.conf", "machine-id", "ndctl",
@@ -212,9 +212,15 @@ class Bwrap:
             bin:x:1:1::/:/usr/bin/nologin
             daemon:x:2:2::/:/usr/bin/nologin
             nobody:x:65534:65534:Kernel Overflow User:/:/usr/bin/nologin
-            dbus:x:81:81:System Message Bus:/:/usr/bin/nologin
-            polkitd:x:102:102:User for polkitd:/:/usr/bin/nologin
             {self.user}:x:{os.getuid()}:{os.getgid()}::{self.home}:{os.getenv("SHELL")}
+        """)
+
+        group_file = dedent(f"""
+            root:x:0:root
+            bin:x:1:daemon
+            nobody:x:65534:
+            daemon:x:2:bin
+            {self.user}:x:{os.getgid()}:
         """)
 
         nsswitch_file = dedent("""
@@ -234,6 +240,7 @@ class Bwrap:
 
         self.file(nsswitch_file, "/etc/nsswitch.conf")
         self.file(passwd_file, "/etc/passwd")
+        self.file(group_file, "/etc/group")
         self.file(hosts_file, "/etc/hosts")
         self.file(self.hostname, "/etc/hostname")
 
