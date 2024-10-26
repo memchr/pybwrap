@@ -15,7 +15,6 @@ BINDMODE_MAP = {
     "d": BindMode.DEV,
 }
 
-
 LOGLEVEL_MAP = {
     "error": logging.ERROR,
     "warning": logging.WARNING,
@@ -35,97 +34,190 @@ def handle_binds(binds: list[str], callback: Callable):
         callback(src, dest, mode)
 
 
+class BwrapArgumentParser(argparse.ArgumentParser):
+    def __init__(self, *args, enable_all=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        if enable_all:
+            self.add_flag_keep()
+            self.add_flag_dbus()
+            self.add_flag_x11()
+            self.add_flag_wayland()
+            self.add_flag_gpu()
+            self.add_flag_nvidia()
+            self.add_flag_audio()
+            self.add_flag_desktop()
+            self.add_flag_pwd()
+            self.add_flag_user()
+            self.add_flag_hostname()
+            self.add_flag_bind_mount()
+            self.add_flag_keep_user()
+            self.add_flag_keep_hostname()
+            self.add_flag_rootfs()
+            self.add_flag_locale()
+            self.add_flag_command()
+
+    class BwrapArgs:
+        dbus: bool
+        x11: bool
+        wayland: bool
+        nvidia: bool
+        gpu: bool
+        audio: bool
+        pwd: bool
+        desktop: bool
+        locale: str
+        v: tuple[str]
+
+    def parse_args(self, *args, **kwargs) -> tuple[BwrapArgs, list[str]]:
+        self.add_flag_loglevel()
+        self.add_flag_help()
+
+        args, unknown = super().parse_known_args(*args, **kwargs)
+
+        if args.help:
+            self.print_help()
+            raise argparse.ArgumentError(
+                None, "\nnotes:\n  Unrecognized arguments will be passed to bwrap"
+            )
+
+        if len(args.command) == 0:
+            self.print_help()
+            raise argparse.ArgumentError(None, "\nError: Command required")
+        command = unknown + (
+            args.command[1:] if args.command[0] == "--" else args.command
+        )
+
+        return args, command
+
+    def add_flag_keep(self):
+        self.add_argument(
+            "-k",
+            "--keep",
+            action="store_true",
+            help="Do not kill sandbox's process when bwrap exits.",
+        )
+
+    def add_flag_dbus(self):
+        self.add_argument("-d", "--dbus", action="store_true", help="Enable dbus.")
+
+    def add_flag_x11(self):
+        self.add_argument("-x", "--x11", action="store_true", help="Enable X11.")
+
+    def add_flag_wayland(self):
+        self.add_argument(
+            "-w", "--wayland", action="store_true", help="Enable Wayland."
+        )
+
+    def add_flag_gpu(self):
+        self.add_argument(
+            "-g", "--gpu", action="store_true", help="Enable GPU access (dri)."
+        )
+
+    def add_flag_nvidia(self):
+        self.add_argument(
+            "-n", "--nvidia", action="store_true", help="Prefer NVIDIA graphics."
+        )
+
+    def add_flag_audio(self):
+        self.add_argument("-a", "--audio", action="store_true", help="Enable sound.")
+
+    def add_flag_desktop(self):
+        self.add_argument(
+            "-D",
+            "--desktop",
+            action="store_true",
+            help="enable x11, wayland, GPU and sound",
+        )
+
+    def add_flag_pwd(self):
+        self.add_argument(
+            "-p", "--pwd", action="store_true", help="Bind current working directory."
+        )
+
+    def add_flag_user(self):
+        self.add_argument(
+            "-u",
+            "--user",
+            type=str,
+            help="Change username to <username>.",
+            default="user",
+        )
+
+    def add_flag_hostname(self):
+        self.add_argument(
+            "-h",
+            "--hostname",
+            type=str,
+            help="Change hostname to <hostname>.",
+            default=f"sandbox-{os.getpid()}",
+        )
+
+    def add_flag_bind_mount(self):
+        self.add_argument(
+            "-v",
+            action="append",
+            type=str,
+            help="Bind mount",
+        )
+
+    def add_flag_keep_user(self):
+        self.add_argument(
+            "-U", "--keep-user", action="store_true", help="Use parent username."
+        )
+
+    def add_flag_keep_hostname(self):
+        self.add_argument(
+            "-H", "--keep-hostname", action="store_true", help="Use parent hostname."
+        )
+
+    def add_flag_rootfs(self):
+        self.add_argument(
+            "-r", "--rootfs", type=str, help="Use <rootfs> as / instead of parent's /."
+        )
+
+    def add_flag_locale(self):
+        self.add_argument("-l", "--locale", type=str, help="Sandbox's locale.")
+
+    def add_flag_loglevel(self):
+        self.add_argument(
+            "--loglevel", type=str, default="error", help="Logging level."
+        )
+
+    def add_flag_help(self):
+        self.add_argument(
+            "--help", action="store_true", help="Show this help message and exit."
+        )
+
+    def add_flag_command(self):
+        self.add_argument(
+            "command",
+            nargs=argparse.REMAINDER,
+            help="Command to run with bwrap",
+        )
+
+
 def main():
     logging.basicConfig(
         level=logging.ERROR,
         format="%(levelname)s:%(name)s: %(message)s",
     )
 
-    parser = argparse.ArgumentParser(
-        description="Create new bubblewrap container", add_help=False
+    parser = BwrapArgumentParser(
+        description="Create new bubblewrap container",
+        add_help=False,
+        enable_all=True,
     )
 
-    # Define the flags
-    parser.add_argument(
-        "-k",
-        "--keep",
-        action="store_true",
-        help="Do not kill sandbox's process when bwrap exits.",
-    )
-    parser.add_argument("-d", "--dbus", action="store_true", help="Enable dbus.")
-    parser.add_argument("-x", "--x11", action="store_true", help="Enable X11.")
-    parser.add_argument("-w", "--wayland", action="store_true", help="Enable Wayland.")
-    parser.add_argument(
-        "-g", "--gpu", action="store_true", help="Enable GPU access (dri)."
-    )
-    parser.add_argument(
-        "-n", "--nvidia", action="store_true", help="Prefer NVIDIA graphics."
-    )
-    parser.add_argument("-a", "--audio", action="store_true", help="Enable sound.")
-    parser.add_argument(
-        "-D", "--desktop", action="store_true", help="enable x11,wayland,GPU and sound"
-    )
-    parser.add_argument(
-        "-p", "--pwd", action="store_true", help="Bind current working directory."
-    )
-    parser.add_argument(
-        "-u",
-        "--user",
-        type=str,
-        help="Change username to <username>.",
-        default="user",
-    )
-    parser.add_argument(
-        "-h",
-        "--hostname",
-        type=str,
-        help="Change hostname to <hostname>.",
-        default=f"sandbox-{os.getpid()}",
-    )
-    parser.add_argument(
-        "-v",
-        action="append",
-        type=str,
-        help="Bind mount",
-    )
-    parser.add_argument(
-        "-U", "--keep-user", action="store_true", help="Use parent username."
-    )
-    parser.add_argument(
-        "-H", "--keep-hostname", action="store_true", help="Use parent hostname."
-    )
-    parser.add_argument(
-        "-r", "--rootfs", type=str, help="Use <rootfs> as / instead of parent's /."
-    )
-    parser.add_argument("-l", "--locale", type=str, help="Sandbox's locale.")
-    parser.add_argument("--loglevel", type=str, default="error", help="Logging level.")
-    # Add help option manually
-    parser.add_argument(
-        "--help", action="store_true", help="Show this help message and exit."
-    )
-    # Capture any additional unrecognized flags
-    parser.add_argument(
-        "command",
-        nargs=argparse.REMAINDER,
-        help="Command to run with bwrap",
-    )
-    # Parse the arguments
-    args, unknown = parser.parse_known_args()
-
-    if args.help:
-        parser.print_help()
-        print("\nnotes:\n  Unrecognized arguments will be passed to bwrap")
+    try:
+        args, command = parser.parse_args()
+    except argparse.ArgumentError as e:
+        print(e.message, file=sys.stderr)
         return 1
 
-    if len(args.command) == 0:
-        parser.print_help()
-        print("\nError: Command required", file=sys.stderr)
-        return 1
-
-    command = unknown + (args.command[1:] if args.command[0] == "--" else args.command)
     loglevel = LOGLEVEL_MAP.get(args.loglevel, logging.ERROR)
     user = os.getlogin() if args.keep_user else args.user
     hostname = socket.gethostname() if args.keep_hostname else args.hostname
+
     sandbox = BwrapSandbox(
         user=user,
         hostname=hostname,
