@@ -303,8 +303,13 @@ class Bwrap:
         for fs in paths:
             self.args.extend(("--tmpfs", str(fs)))
 
-    def file(self, content: str, dest: str):
-        # TODO: support perm mode
+    def file(self, content: str, dest: str, perms=None):
+        """Copy from file descriptor to dest
+
+        Default permission is 0666
+        """
+        if perms:
+            self.args.extend(("--perms", str(perms)))
         r, w = os.pipe()
         os.set_inheritable(r, True)
         os.write(w, content.encode())
