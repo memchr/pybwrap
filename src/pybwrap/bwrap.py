@@ -350,11 +350,31 @@ class Bwrap:
             ):
                 self.logger.debug(f"arg: {a}")
 
-    def exec(self, command: list):
-        self._debug_print_args()
+    def chdir(self, dest: Optional[str] = None):
+        """Change directory to dest
+
+        Args:
+            dest (str, optional): if None, change to current working directory
+        """
+        if dest is None:
+            dest = str(self.cwd)
+        self.args.extend(("--chdir", dest))
+
+    def exec(self, command: list[str]):
+        """Start the bwrap container
+
+        Args:
+            command (list[str]): commands to run. can be prepended with
+            addtional bwrap arguments
+        """
+        self._debug_print_args(command)
+
+        # Pass arguments in a file descriptor
         arg_fd, w = os.pipe()
         os.set_inheritable(arg_fd, True)
         os.write(w, "\0".join(self.args).encode())
+
+        # launch the container
         os.execvp("bwrap", ["bwrap", "--args", str(arg_fd)] + command)
 
 
