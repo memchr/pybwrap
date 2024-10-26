@@ -237,13 +237,11 @@ def main():
         print(e.message, file=sys.stderr)
         return 1
 
-    user = os.getlogin() if args.keep_user else args.user
-    hostname = socket.gethostname() if args.keep_hostname else args.hostname
-
     sandbox = BwrapSandbox(
-        user=user,
-        hostname=hostname,
-        home=Path("/home") / user,
+        user=args.user,
+        hostname=args.hostname,
+        keep_user=args.keep_user,
+        keep_hostname=args.keep_hostname,
         loglevel=args.loglevel,
         keep_child=args.keep,
     )

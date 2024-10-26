@@ -49,6 +49,8 @@ class Bwrap:
     class Options(TypedDict):
         user: str
         hostname: str
+        keep_user: bool
+        keep_hostname: bool
         home: Optional[Path]
         etc_binds: tuple[str]
         loglevel: int
@@ -64,7 +66,15 @@ class Bwrap:
         self.home: Path = kwargs.get("home", Path("/home") / self.user)
         self.hostname: str = kwargs.get("hostname", f"sandbox-{os.getpid()}")
         self.etc_binds: tuple[str] = kwargs.get("etc_binds", self._DEFAULT_ETC_BINDS)
+
         self._host_home: Path = Path.home()
+        self._host_hostname = socket.gethostname()
+
+        if kwargs.get("keep_user", False):
+            self.user = os.getlogin()
+        if kwargs.get("keep_hostname", False):
+            self.hostname = self._host_hostname
+
         self.logger.info(f"container HOME: {self.home}")
 
         # Adjusts the host's current working directory (CWD) for the container.
@@ -191,7 +201,7 @@ class Bwrap:
 
     def _init_system_id(self):
         """Initialize system identity, such as hostname and user name"""
-        if socket.gethostname() != self.hostname:
+        if self.hostname != self._host_hostname:
             self.logger.info(f"Hostname changed to {self.hostname}")
             self.args.extend([
                 "--unshare-uts",
