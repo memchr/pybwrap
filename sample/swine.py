@@ -25,7 +25,9 @@ def main():
     )
     logger = logging.getLogger("swine")
 
-    parser = BwrapArgumentParser(description="Run wine in bubblewrap sandbox")
+    parser = BwrapArgumentParser(
+        description="Run wine in bubblewrap sandbox",
+    )
 
     parser.add_flag_nvidia()
     parser.add_flag_unshare_net()

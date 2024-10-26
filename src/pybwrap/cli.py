@@ -34,7 +34,7 @@ def handle_binds(binds: list[str], callback: Callable):
 
 
 class BwrapArgumentParser(argparse.ArgumentParser):
-    def __init__(self, *args, enable_all=False, **kwargs):
+    def __init__(self, *args, enable_all=False, default_cmd=None, **kwargs):
         super().__init__(*args, add_help=False, **kwargs)
         if enable_all:
             self.add_flag_keep()
@@ -67,6 +67,7 @@ class BwrapArgumentParser(argparse.ArgumentParser):
             nargs=argparse.REMAINDER,
             help="Command to run with bwrap",
         )
+        self.default_cmd = default_cmd
 
     class BwrapArgs:
         dbus: bool
@@ -97,8 +98,11 @@ class BwrapArgumentParser(argparse.ArgumentParser):
             )
 
         if len(args.command) == 0:
-            self.print_help()
-            raise argparse.ArgumentError(None, "\nError: Command required")
+            if self.default_cmd:
+                args.command = self.default_cmd
+            else:
+                self.print_help()
+                raise argparse.ArgumentError(None, "\nError: Command required")
         command = unknown + (
             args.command[1:] if args.command[0] == "--" else args.command
         )
