@@ -47,7 +47,7 @@ class Bwrap:
         "/sbin",
     )
 
-    class BwrapOptions(TypedDict):
+    class Options(TypedDict):
         user: str
         hostname: str
         home: Optional[Path]
@@ -58,7 +58,7 @@ class Bwrap:
         keep_child: bool
         rootfs: Optional[Path]
 
-    def __init__(self, **kwargs: Unpack[BwrapOptions]):
+    def __init__(self, **kwargs: Unpack[Options]):
         self.logger = logging.getLogger("bwrap")
         self.logger.setLevel(kwargs.get("loglevel", logging.ERROR))
         self.user: str = kwargs.get("user", "user")
@@ -359,7 +359,7 @@ class Bwrap:
 
 
 class BwrapSandbox(Bwrap):
-    def __init__(self, *args, **kwargs: Unpack[Bwrap.BwrapOptions]):
+    def __init__(self, *args, **kwargs: Unpack[Bwrap.Options]):
         super().__init__(*args, **kwargs)
         self._enabled_features = set()
 
