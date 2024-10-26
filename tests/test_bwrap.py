@@ -2,7 +2,6 @@ import unittest
 from unittest.mock import patch
 from pathlib import Path
 
-from pyparsing import restOfLine
 from pybwrap import Bwrap, BindMode
 
 
@@ -13,7 +12,6 @@ class TestBwrap(unittest.TestCase):
             user="testuser",
             hostname="testhost",
             loglevel=10,
-            profile=Path("/home/testuser"),
             etc_binds=("group", "passwd", "hostname"),
         )
         self.args = " ".join(self.bwrap.args)
