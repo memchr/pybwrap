@@ -2,7 +2,6 @@ import argparse
 import logging
 import os
 import re
-import socket
 import sys
 from pathlib import Path
 from typing import Callable
@@ -56,7 +55,18 @@ class BwrapArgumentParser(argparse.ArgumentParser):
             self.add_flag_mangohud()
             self.add_flag_rootfs()
             self.add_flag_locale()
-            self.add_arg_command()
+        self.add_argument(
+            "--loglevel", type=str, default="error", help="Logging level."
+        )
+
+        self.add_argument(
+            "--help", action="store_true", help="Show this help message and exit."
+        )
+        self.add_argument(
+            "command",
+            nargs=argparse.REMAINDER,
+            help="Command to run with bwrap",
+        )
 
     class BwrapArgs:
         dbus: bool
@@ -78,9 +88,6 @@ class BwrapArgumentParser(argparse.ArgumentParser):
         loglevel: int
 
     def parse_args(self, *args, **kwargs) -> tuple[BwrapArgs, list[str]]:
-        self.add_flag_loglevel()
-        self.add_flag_help()
-
         args, unknown = super().parse_known_args(*args, **kwargs)
 
         if args.help:
@@ -189,16 +196,6 @@ class BwrapArgumentParser(argparse.ArgumentParser):
     def add_flag_locale(self):
         self.add_argument("-l", "--locale", type=str, help="Sandbox's locale.")
 
-    def add_flag_loglevel(self):
-        self.add_argument(
-            "--loglevel", type=str, default="error", help="Logging level."
-        )
-
-    def add_flag_help(self):
-        self.add_argument(
-            "--help", action="store_true", help="Show this help message and exit."
-        )
-
     def add_flag_unshare_net(self):
         self.add_argument(
             "-o",
@@ -210,13 +207,6 @@ class BwrapArgumentParser(argparse.ArgumentParser):
     def add_flag_mangohud(self):
         self.add_argument(
             "-m", "--mangohud", action="store_true", help="Enable mangohud."
-        )
-
-    def add_arg_command(self):
-        self.add_argument(
-            "command",
-            nargs=argparse.REMAINDER,
-            help="Command to run with bwrap",
         )
 
 
