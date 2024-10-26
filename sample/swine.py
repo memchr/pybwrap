@@ -66,11 +66,7 @@ def main():
         type=str,
         help="Use a wine prefix, the default is $_prefix.",
     )
-    try:
-        args, command = parser.parse_args()
-    except argparse.ArgumentError as e:
-        print(e.message, file=sys.stderr)
-        return 1
+    args, command = parser.parse_args()
 
     logger.setLevel(args.loglevel)
 

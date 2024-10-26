@@ -93,16 +93,16 @@ class BwrapArgumentParser(argparse.ArgumentParser):
 
         if args.help:
             self.print_help()
-            raise argparse.ArgumentError(
-                None, "\nnotes:\n  Unrecognized arguments will be passed to bwrap"
-            )
+            print("\nnotes:\n  Unrecognized arguments will be passed to bwrap")
+            sys.exit(0)
 
         if len(args.command) == 0:
             if self.default_cmd:
                 args.command = self.default_cmd
             else:
                 self.print_help()
-                raise argparse.ArgumentError(None, "\nError: Command required")
+                print("\nError: Command required", file=sys.stderr)
+                sys.exit(1)
         command = unknown + (
             args.command[1:] if args.command[0] == "--" else args.command
         )
@@ -225,11 +225,7 @@ def main():
         enable_all=True,
     )
 
-    try:
-        args, command = parser.parse_args()
-    except argparse.ArgumentError as e:
-        print(e.message, file=sys.stderr)
-        return 1
+    args, command = parser.parse_args()
 
     sandbox = BwrapSandbox(
         user=args.user,
