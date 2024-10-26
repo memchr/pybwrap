@@ -73,7 +73,7 @@ class Bwrap:
         if kwargs.get("keep_hostname", False):
             self.hostname = self._host_hostname
 
-        self.home: Path = kwargs.get("home", Path("/home") / self.user)
+        self.home: Path = Path(kwargs.get("home", Path("/home") / self.user))
         self.logger.info(f"container HOME: {self.home}")
 
         self.etc_binds: tuple[str] = kwargs.get("etc_binds", self._DEFAULT_ETC_BINDS)
