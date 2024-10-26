@@ -51,19 +51,19 @@ class Bwrap:
         hostname: str
         keep_user: bool
         keep_hostname: bool
-        home: Optional[Path]
+        profile: str
         etc_binds: tuple[str]
         loglevel: int
-        path: Optional[tuple[str]]
+        path: tuple[str]
         clearenv: bool
         keep_child: bool
-        rootfs: Optional[Path]
+        rootfs: Path
 
     def __init__(self, **kwargs: Unpack[Options]):
         self.logger = logging.getLogger("bwrap")
         self.logger.setLevel(kwargs.get("loglevel", logging.ERROR))
 
-        self._host_home: Path = Path.home()
+        self._host_home = Path.home()
         self._host_hostname = socket.gethostname()
 
         self.user: str = kwargs.get("user", "user")
@@ -73,7 +73,7 @@ class Bwrap:
         if kwargs.get("keep_hostname", False):
             self.hostname = self._host_hostname
 
-        self.home: Path = Path(kwargs.get("home", Path("/home") / self.user))
+        self.home = Path("/home") / self.user
         self.logger.info(f"container HOME: {self.home}")
 
         self.etc_binds: tuple[str] = kwargs.get("etc_binds", self._DEFAULT_ETC_BINDS)
@@ -85,7 +85,7 @@ class Bwrap:
         self.logger.info(f"container CWD: {self.cwd}")
 
         self._init_container(kwargs.get("rootfs"), kwargs.get("keep_child", False))
-        self._init_xdg()
+        self._init_home(kwargs.get("profile"))
         self._init_env(kwargs.get("path"), kwargs.get("clearenv", True))
         self._init_system_id()
 
@@ -134,12 +134,15 @@ class Bwrap:
             self.logger.info("Container will be killed when bwrap terminates")
             self.args.append("--die-with-parent")
 
-    def _init_xdg(self):
+    def _init_home(self, profile):
         self.xdg_runtime_dir = Path(f"/run/user/{os.getuid()}")
         self.xdg_config_home = self.home / ".config"
         self.xdg_cache_home = self.home / ".cache"
         self.xdg_data_home = self.home / ".local" / "share"
         self.xdg_state_home = self.home / ".local" / "state"
+        if profile:
+            self.logger.info(f"using host {profile} as container home directory")
+            self.args.extend(("--bind", str(profile), str(self.home)))
         self.dir(
             self.home,
             self.xdg_runtime_dir,
