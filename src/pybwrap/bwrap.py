@@ -62,20 +62,21 @@ class Bwrap:
     def __init__(self, **kwargs: Unpack[Options]):
         self.logger = logging.getLogger("bwrap")
         self.logger.setLevel(kwargs.get("loglevel", logging.ERROR))
-        self.user: str = kwargs.get("user", "user")
-        self.home: Path = kwargs.get("home", Path("/home") / self.user)
-        self.hostname: str = kwargs.get("hostname", f"sandbox-{os.getpid()}")
-        self.etc_binds: tuple[str] = kwargs.get("etc_binds", self._DEFAULT_ETC_BINDS)
 
         self._host_home: Path = Path.home()
         self._host_hostname = socket.gethostname()
 
+        self.user: str = kwargs.get("user", "user")
+        self.hostname: str = kwargs.get("hostname", f"sandbox-{os.getpid()}")
         if kwargs.get("keep_user", False):
             self.user = os.getlogin()
         if kwargs.get("keep_hostname", False):
             self.hostname = self._host_hostname
 
+        self.home: Path = kwargs.get("home", Path("/home") / self.user)
         self.logger.info(f"container HOME: {self.home}")
+
+        self.etc_binds: tuple[str] = kwargs.get("etc_binds", self._DEFAULT_ETC_BINDS)
 
         # Adjusts the host's current working directory (CWD) for the container.
         self.cwd = Path.cwd()
