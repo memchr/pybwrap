@@ -36,7 +36,7 @@ def handle_binds(binds: list[str], callback: Callable):
 
 class BwrapArgumentParser(argparse.ArgumentParser):
     def __init__(self, *args, enable_all=False, **kwargs):
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, add_help=False, **kwargs)
         if enable_all:
             self.add_flag_keep()
             self.add_flag_dbus()
@@ -224,7 +224,6 @@ def main():
 
     parser = BwrapArgumentParser(
         description="Create new bubblewrap container",
-        add_help=False,
         enable_all=True,
     )
 
