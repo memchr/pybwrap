@@ -46,7 +46,7 @@ class BwrapArgumentParser(argparse.ArgumentParser):
             self.add_flag_nvidia()
             self.add_flag_audio()
             self.add_flag_desktop()
-            self.add_flag_pwd()
+            self.add_flag_cwd()
             self.add_flag_user()
             self.add_flag_hostname()
             self.add_flag_bind_mount()
@@ -69,6 +69,10 @@ class BwrapArgumentParser(argparse.ArgumentParser):
         unshare_net: bool
         desktop: bool
         mangohud: bool
+        keep: bool
+        user: str
+        keep_user: bool
+        keep_hostname: bool
         locale: str
         v: tuple[str]
         loglevel: int
@@ -136,7 +140,7 @@ class BwrapArgumentParser(argparse.ArgumentParser):
             help="enable x11, wayland, GPU and sound",
         )
 
-    def add_flag_pwd(self):
+    def add_flag_cwd(self):
         self.add_argument(
             "-c", "--cwd", action="store_true", help="Bind current working directory."
         )
