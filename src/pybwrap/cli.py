@@ -52,9 +52,10 @@ class BwrapArgumentParser(argparse.ArgumentParser):
             self.add_flag_bind_mount()
             self.add_flag_keep_user()
             self.add_flag_keep_hostname()
+            self.add_flag_unshare_net()
             self.add_flag_rootfs()
             self.add_flag_locale()
-            self.add_flag_command()
+            self.add_arg_command()
 
     class BwrapArgs:
         dbus: bool
@@ -63,7 +64,8 @@ class BwrapArgumentParser(argparse.ArgumentParser):
         nvidia: bool
         gpu: bool
         audio: bool
-        pwd: bool
+        cwd: bool
+        unshare_net: bool
         desktop: bool
         locale: str
         v: tuple[str]
@@ -131,7 +133,7 @@ class BwrapArgumentParser(argparse.ArgumentParser):
 
     def add_flag_pwd(self):
         self.add_argument(
-            "-p", "--pwd", action="store_true", help="Bind current working directory."
+            "-c", "--cwd", action="store_true", help="Bind current working directory."
         )
 
     def add_flag_user(self):
@@ -188,7 +190,15 @@ class BwrapArgumentParser(argparse.ArgumentParser):
             "--help", action="store_true", help="Show this help message and exit."
         )
 
-    def add_flag_command(self):
+    def add_flag_unshare_net(self):
+        self.add_argument(
+            "-o",
+            "--unshare-net",
+            action="store_true",
+            help="Create a new network namespace.",
+        )
+
+    def add_arg_command(self):
         self.add_argument(
             "command",
             nargs=argparse.REMAINDER,
@@ -225,7 +235,7 @@ def main():
         loglevel=loglevel,
         keep_child=args.keep,
     )
-    sandbox.unshare()
+    sandbox.unshare(net=args.unshare_net)
     if args.dbus:
         sandbox.dbus()
     if args.x11:
@@ -238,8 +248,9 @@ def main():
         sandbox.gpu()
     if args.nvidia:
         sandbox.nvidia()
-    if args.pwd:
-        sandbox.home_bind(os.getcwd(), BindMode.RW)
+    if args.cwd:
+        sandbox.bind(os.getcwd(), mode=BindMode.RW)
+        sandbox.chdir()
     if args.desktop:
         sandbox.desktop()
     if args.locale is not None:
