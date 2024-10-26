@@ -71,6 +71,7 @@ class BwrapArgumentParser(argparse.ArgumentParser):
         mangohud: bool
         locale: str
         v: tuple[str]
+        loglevel: int
 
     def parse_args(self, *args, **kwargs) -> tuple[BwrapArgs, list[str]]:
         self.add_flag_loglevel()
@@ -90,6 +91,8 @@ class BwrapArgumentParser(argparse.ArgumentParser):
         command = unknown + (
             args.command[1:] if args.command[0] == "--" else args.command
         )
+
+        args.loglevel = LOGLEVEL_MAP.get(getattr(args, "loglevel"), logging.ERROR)
 
         return args, command
 
@@ -231,7 +234,6 @@ def main():
         print(e.message, file=sys.stderr)
         return 1
 
-    loglevel = LOGLEVEL_MAP.get(args.loglevel, logging.ERROR)
     user = os.getlogin() if args.keep_user else args.user
     hostname = socket.gethostname() if args.keep_hostname else args.hostname
 
@@ -239,7 +241,7 @@ def main():
         user=user,
         hostname=hostname,
         home=Path("/home") / user,
-        loglevel=loglevel,
+        loglevel=args.loglevel,
         keep_child=args.keep,
     )
     sandbox.unshare(net=args.unshare_net)
