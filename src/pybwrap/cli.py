@@ -41,7 +41,7 @@ class BwrapArgumentParser(argparse.ArgumentParser):
         default_cmd=None,
         **kwargs,
     ):
-        super().__init__(*args, add_help=False, **kwargs)
+        super().__init__(*args, **kwargs)
         if enable_all_flags:
             self.add_flag_keep()
             self.add_flag_dbus()
@@ -64,9 +64,6 @@ class BwrapArgumentParser(argparse.ArgumentParser):
             self.add_flag_locale()
         self.add_argument(
             "--loglevel", type=str, default="error", help="Logging level."
-        )
-        self.add_argument(
-            "--help", action="store_true", help="Show this help message and exit."
         )
         self.default_cmd = default_cmd
 
@@ -94,11 +91,6 @@ class BwrapArgumentParser(argparse.ArgumentParser):
 
     def parse_args(self, *args, **kwargs) -> BwrapArgs:
         args: BwrapArgumentParser.BwrapArgs = super().parse_args(*args, **kwargs)
-
-        if args.help:
-            self.print_help()
-            print("\nnotes:\n  Pass bwrap flags after `--`")
-            sys.exit(0)
 
         if len(args.command) == 0:
             if self.default_cmd:
@@ -177,7 +169,7 @@ class BwrapArgumentParser(argparse.ArgumentParser):
 
     def add_flag_hostname(self):
         self.add_argument(
-            "-h",
+            "-t",
             "--hostname",
             type=str,
             help="Change hostname to <hostname>.",
