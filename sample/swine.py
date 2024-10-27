@@ -30,7 +30,7 @@ def main():
     parser.add_flag_unshare_net()
     parser.add_flag_keep()
     parser.add_flag_keep_user()
-    parser.add_flag_bind_mount()
+    parser.add_flag_bind()
 
     parser.add_flag_mangohud()
     parser.add_flag_nvidia()
@@ -140,8 +140,8 @@ def main():
             PROTON_ENABLE_NVAPI="1",
         )
 
-    if args.v:
-        handle_binds(args.v, sandbox.bind)
+    if args.bind:
+        handle_binds(args.bind, sandbox.bind)
 
     if args.proton:
         prefix = str(args.prefix or DEFAULT_PROTON_PREFIX)

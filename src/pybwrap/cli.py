@@ -67,7 +67,7 @@ class BwrapArgumentParser(argparse.ArgumentParser):
             # mount points
             self.add_flag_rootfs()
             self.add_flag_profile()
-            self.add_flag_bind_mount()
+            self.add_flag_bind()
             self.add_flag_cwd()
         self.add_argument(
             "--loglevel", type=str, default="error", help="Logging level."
@@ -93,7 +93,7 @@ class BwrapArgumentParser(argparse.ArgumentParser):
         keep_hostname: bool
         command: list[str]
         locale: str
-        v: tuple[str]
+        bind: tuple[str]
         loglevel: int
 
     def parse_args(self, *args, **kwargs) -> BwrapArgs:
@@ -189,9 +189,10 @@ class BwrapArgumentParser(argparse.ArgumentParser):
             default=f"sandbox-{os.getpid()}",
         )
 
-    def add_flag_bind_mount(self):
+    def add_flag_bind(self):
         self.mount_flags.add_argument(
             "-v",
+            "--bind",
             action="append",
             type=str,
             help="Bind mount",
@@ -282,6 +283,6 @@ def main():
     if args.mangohud:
         sandbox.mangohud(enable=True)
     sandbox.home_bind_many("downloads", "tmp", mode=BindMode.RW)
-    if args.v:
-        handle_binds(args.v, sandbox.bind)
+    if args.bind:
+        handle_binds(args.bind, sandbox.bind)
     sandbox.exec(args.command)
