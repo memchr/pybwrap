@@ -37,7 +37,7 @@ class Bwrap:
         "wgetrc", "whois.conf", "wpa_supplicant", "xattr.conf", "xdg",
         "xinetd.d", "xml", "libreoffice", "java21-openjdk", "java11-openjdk"
     )  # fmt: skip
-    _DEFAULT_PATHS = (
+    DEFAULT_PATH = (
         ".local/bin",
         "go/bin",
         "/usr/local/bin",
@@ -166,9 +166,9 @@ class Bwrap:
             self.logger.info("Environment variables cleared")
             self.args.append("--clearenv")
 
-        path = path or tuple(
+        path = (
             p if Path(p).is_absolute() else str(self.home / p)
-            for p in self._DEFAULT_PATHS
+            for p in path or self.DEFAULT_PATH
         )
 
         self.setenv(
