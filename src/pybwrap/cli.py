@@ -54,6 +54,7 @@ class BwrapArgumentParser(argparse.ArgumentParser):
             self.add_flag_unshare_net()
             self.add_flag_mangohud()
             self.add_flag_rootfs()
+            self.add_flag_profile()
             self.add_flag_locale()
         self.add_argument(
             "--loglevel", type=str, default="error", help="Logging level."
@@ -80,6 +81,7 @@ class BwrapArgumentParser(argparse.ArgumentParser):
         unshare_net: bool
         desktop: bool
         mangohud: bool
+        profile: str
         keep: bool
         user: str
         hostname: str
@@ -111,6 +113,11 @@ class BwrapArgumentParser(argparse.ArgumentParser):
         args.loglevel = LOGLEVEL_MAP.get(getattr(args, "loglevel"), logging.ERROR)
 
         return args, command
+
+    def add_flag_profile(self):
+        self.add_argument(
+            "-p", "--profile", type=str, help="Use a custom HOME directory"
+        )
 
     def add_flag_keep(self):
         self.add_argument(
@@ -231,6 +238,7 @@ def main():
     sandbox = BwrapSandbox(
         user=args.user,
         hostname=args.hostname,
+        profile=args.profile,
         keep_user=args.keep_user,
         keep_hostname=args.keep_hostname,
         loglevel=args.loglevel,
