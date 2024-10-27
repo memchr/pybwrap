@@ -68,6 +68,9 @@ def main():
     parser.add_args_command()
     args = parser.parse_args()
 
+    if len(args.command) == 0:
+        parser.error("a command is reqired")
+
     logger.setLevel(args.loglevel)
 
     # Do not change user name when running wine on default prefix

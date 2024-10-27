@@ -102,14 +102,9 @@ class BwrapArgumentParser(argparse.ArgumentParser):
         if len(args.command) == 0:
             if self.default_cmd:
                 args.command = self.default_cmd
-            else:
-                self.print_help()
-                print("\nError: Command required", file=sys.stderr)
-                sys.exit(1)
-
-        # remove leading "--"
-        if args.command[0] == "--":
-            args.command.pop(0)
+        else:
+            if args.command[0] == "--":
+                args.command.pop(0)
 
         args.loglevel = LOGLEVEL_MAP.get(getattr(args, "loglevel"), logging.ERROR)
 
@@ -250,6 +245,9 @@ def main():
     parser.add_args_command()
 
     args = parser.parse_args()
+
+    if len(args.command) == 0:
+        parser.error("a command is required")
 
     sandbox = BwrapSandbox(
         user=args.user,
