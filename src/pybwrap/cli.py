@@ -82,6 +82,7 @@ class BwrapArgumentParser(argparse.ArgumentParser):
         mangohud: bool
         keep: bool
         user: str
+        hostname: str
         keep_user: bool
         keep_hostname: bool
         locale: str
