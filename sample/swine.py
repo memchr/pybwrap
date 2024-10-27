@@ -27,26 +27,27 @@ def main():
         description="Run wine in bubblewrap sandbox",
     )
 
-    parser.add_flag_nvidia()
     parser.add_flag_unshare_net()
     parser.add_flag_keep()
     parser.add_flag_keep_user()
-    parser.add_flag_mangohud()
     parser.add_flag_bind_mount()
 
-    parser.add_argument(
-        "-p",
-        "--proton",
-        action="store_true",
-        help="Use proton",
-    )
-    parser.add_argument(
+    parser.add_flag_mangohud()
+    parser.add_flag_nvidia()
+    parser.feature_flags.add_argument(
         "-N",
         "--nvidia-fix",
         action="store_true",
         help="Nvidia workaround for Vulkan.",
     )
-    parser.add_argument(
+
+    parser.feature_flags.add_argument(
+        "-p",
+        "--proton",
+        action="store_true",
+        help="Use proton",
+    )
+    parser.feature_flags.add_argument(
         "-P",
         "--proton-fix",
         action="store_true",
@@ -58,7 +59,7 @@ def main():
         action="store_true",
         help="Run shell command instead of wine.",
     )
-    parser.add_argument(
+    parser.mount_flags.add_argument(
         "-x",
         "--prefix",
         type=str,

@@ -42,8 +42,20 @@ class BwrapArgumentParser(argparse.ArgumentParser):
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
+        self.id_flags = self.add_argument_group("system identification")
+        self.feature_flags = self.add_argument_group("sandbox features")
+        self.mount_flags = self.add_argument_group("mount points")
+
         if enable_all_flags:
             self.add_flag_keep()
+            self.add_flag_unshare_net()
+            self.add_flag_locale()
+            # id
+            self.add_flag_user()
+            self.add_flag_hostname()
+            self.add_flag_keep_user()
+            self.add_flag_keep_hostname()
+            # feature
             self.add_flag_dbus()
             self.add_flag_x11()
             self.add_flag_wayland()
@@ -51,17 +63,12 @@ class BwrapArgumentParser(argparse.ArgumentParser):
             self.add_flag_nvidia()
             self.add_flag_audio()
             self.add_flag_desktop()
-            self.add_flag_cwd()
-            self.add_flag_user()
-            self.add_flag_hostname()
-            self.add_flag_bind_mount()
-            self.add_flag_keep_user()
-            self.add_flag_keep_hostname()
-            self.add_flag_unshare_net()
             self.add_flag_mangohud()
+            # mount points
             self.add_flag_rootfs()
             self.add_flag_profile()
-            self.add_flag_locale()
+            self.add_flag_bind_mount()
+            self.add_flag_cwd()
         self.add_argument(
             "--loglevel", type=str, default="error", help="Logging level."
         )
@@ -109,7 +116,7 @@ class BwrapArgumentParser(argparse.ArgumentParser):
         return args
 
     def add_flag_profile(self):
-        self.add_argument(
+        self.mount_flags.add_argument(
             "-p", "--profile", type=str, help="Use a custom HOME directory"
         )
 
@@ -122,31 +129,37 @@ class BwrapArgumentParser(argparse.ArgumentParser):
         )
 
     def add_flag_dbus(self):
-        self.add_argument("-d", "--dbus", action="store_true", help="Enable dbus.")
+        self.feature_flags.add_argument(
+            "-d", "--dbus", action="store_true", help="Enable dbus."
+        )
 
     def add_flag_x11(self):
-        self.add_argument("-x", "--x11", action="store_true", help="Enable X11.")
+        self.feature_flags.add_argument(
+            "-x", "--x11", action="store_true", help="Enable X11."
+        )
 
     def add_flag_wayland(self):
-        self.add_argument(
+        self.feature_flags.add_argument(
             "-w", "--wayland", action="store_true", help="Enable Wayland."
         )
 
     def add_flag_gpu(self):
-        self.add_argument(
+        self.feature_flags.add_argument(
             "-g", "--gpu", action="store_true", help="Enable GPU access (dri)."
         )
 
     def add_flag_nvidia(self):
-        self.add_argument(
+        self.feature_flags.add_argument(
             "-n", "--nvidia", action="store_true", help="Prefer NVIDIA graphics."
         )
 
     def add_flag_audio(self):
-        self.add_argument("-a", "--audio", action="store_true", help="Enable sound.")
+        self.feature_flags.add_argument(
+            "-a", "--audio", action="store_true", help="Enable sound."
+        )
 
     def add_flag_desktop(self):
-        self.add_argument(
+        self.feature_flags.add_argument(
             "-D",
             "--desktop",
             action="store_true",
@@ -154,12 +167,12 @@ class BwrapArgumentParser(argparse.ArgumentParser):
         )
 
     def add_flag_cwd(self):
-        self.add_argument(
+        self.mount_flags.add_argument(
             "-c", "--cwd", action="store_true", help="Bind current working directory."
         )
 
     def add_flag_user(self):
-        self.add_argument(
+        self.id_flags.add_argument(
             "-u",
             "--user",
             type=str,
@@ -168,7 +181,7 @@ class BwrapArgumentParser(argparse.ArgumentParser):
         )
 
     def add_flag_hostname(self):
-        self.add_argument(
+        self.id_flags.add_argument(
             "-t",
             "--hostname",
             type=str,
@@ -177,7 +190,7 @@ class BwrapArgumentParser(argparse.ArgumentParser):
         )
 
     def add_flag_bind_mount(self):
-        self.add_argument(
+        self.mount_flags.add_argument(
             "-v",
             action="append",
             type=str,
@@ -185,17 +198,17 @@ class BwrapArgumentParser(argparse.ArgumentParser):
         )
 
     def add_flag_keep_user(self):
-        self.add_argument(
+        self.id_flags.add_argument(
             "-U", "--keep-user", action="store_true", help="Use parent username."
         )
 
     def add_flag_keep_hostname(self):
-        self.add_argument(
+        self.id_flags.add_argument(
             "-H", "--keep-hostname", action="store_true", help="Use parent hostname."
         )
 
     def add_flag_rootfs(self):
-        self.add_argument(
+        self.mount_flags.add_argument(
             "-r", "--rootfs", type=str, help="Use <rootfs> as / instead of parent's /."
         )
 
@@ -211,7 +224,7 @@ class BwrapArgumentParser(argparse.ArgumentParser):
         )
 
     def add_flag_mangohud(self):
-        self.add_argument(
+        self.feature_flags.add_argument(
             "-m", "--mangohud", action="store_true", help="Enable mangohud."
         )
 
