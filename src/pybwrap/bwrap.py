@@ -8,7 +8,7 @@ from glob import glob
 from pathlib import Path
 from typing import Callable, Optional, Self, TypedDict, Union, Unpack
 
-from pybwrap._secomp import SECCOMP_FILTER
+from pybwrap._secomp import SECCOMP_BLOCK_TIOCSTI
 
 
 class BindMode(Enum):
@@ -265,7 +265,7 @@ class Bwrap:
     def _init_seccomp(self):
         r, w = os.pipe()
         os.set_inheritable(r, True)
-        os.write(w, SECCOMP_FILTER)
+        os.write(w, SECCOMP_BLOCK_TIOCSTI)
         self.args.extend(("--seccomp", str(r)))
 
     @staticmethod

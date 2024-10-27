@@ -1,79 +1,68 @@
-#define _GNU_SOURCE
-#include <err.h>
 #include <errno.h>
-#include <fcntl.h>
-#include <seccomp.h>
+#include <linux/audit.h>
+#include <linux/bpf.h>
+#include <linux/filter.h>
+#include <linux/seccomp.h>
+#include <stddef.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <sys/ioctl.h>
-#include <sys/mman.h>
+#include <sys/prctl.h>
+#include <sys/syscall.h>
 #include <sys/utsname.h>
+#include <termios.h>
 #include <unistd.h>
 
-void export_filter(int fd) {
-	scmp_filter_ctx seccomp_ctx = seccomp_init(SCMP_ACT_ALLOW);
-	if (!seccomp_ctx) {
-		err(1, "seccomp_init failed");
-		goto falure;
-	}
+#define NR_ioctl_x86_64 16
+#define NR_ioctl_i386   54
 
-	if (seccomp_rule_add_exact(seccomp_ctx, SCMP_ACT_ERRNO(EPERM),
-	                           SCMP_SYS(ioctl), 1,
-	                           SCMP_A1(SCMP_CMP_EQ, TIOCSTI)))
-	{
-		perror("seccomp_rule_add_exact failed");
-		goto falure;
-	}
+struct sock_filter filter[] = {
+    /* Load architecture, x86_64 or i386 */
+    BPF_STMT(BPF_LD | BPF_W | BPF_ABS, (offsetof(struct seccomp_data, arch))),
+    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AUDIT_ARCH_X86_64, 2, 0),
+    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AUDIT_ARCH_I386, 4, 0),
+    /* If neither, kill the process */
+    BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL),
 
-	int rc = seccomp_export_bpf(seccomp_ctx, fd);
-	if (rc < 0) {
-		perror("failed to export bpf");
-		goto falure;
-	}
+    /* x86_64 Check if it's ioctl */
+    BPF_STMT(BPF_LD | BPF_W | BPF_ABS, (offsetof(struct seccomp_data, nr))),
+    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, NR_ioctl_x86_64, 4, 0),
+    /* if not ioctl, ret allow */
+    BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
 
-	seccomp_release(seccomp_ctx);
-	return;
+    /* i386 Check if it's ioctl */
+    BPF_STMT(BPF_LD | BPF_W | BPF_ABS, (offsetof(struct seccomp_data, nr))),
+    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, NR_ioctl_i386, 1, 0),
+    /* if not ioctl, ret allow */
+    BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
 
-falure:
-	close(fd);
-	exit(1);
-}
+    /* Load ioctl cmd argument */
+    BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+             (offsetof(struct seccomp_data, args[1]))),
 
-void pysetvar(const char *name, const char *value, size_t size) {
+    /*  Check if it's TIOCSTI */
+    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, TIOCSTI, 1, 0),
+    /* if not TIOSCTI, ret allow */
+    BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+
+    /* Block TIOCSTI */
+    BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | (EPERM & SECCOMP_RET_DATA))};
+
+/* Create the filter program structure */
+struct sock_fprog prog = {
+    .len = sizeof(filter) / sizeof(filter[0]),
+    .filter = filter,
+};
+
+void pysetvar(const char *name, unsigned char *value, size_t size) {
 	printf("%s = b'", name);
 	for (size_t i = 0; i < size; i++) {
-		unsigned char c = (unsigned char)value[i];
 		// Print each byte as a two-digit hexadecimal value
-		printf("\\x%02x", c);
+		printf("\\x%02x", value[i]);
 	}
 	printf("'\n");
 }
 
 int main(void) {
-
-	int fd = memfd_create("seccomp_filter", 0);
-	if (fd == -1) {
-		perror("memfd_create");
-		exit(1);
-	}
-
-	export_filter(fd);
-
-	off_t bpf_len = lseek(fd, 0, SEEK_END);
-	lseek(fd, 0, SEEK_SET);
-
-	char *bpf = malloc(bpf_len);
-	if (bpf == NULL) {
-		perror("malloc");
-		close(fd);
-		exit(1);
-	}
-
-	read(fd, bpf, bpf_len);
-
-	close(fd);
-
-	pysetvar("SECCOMP_FILTER", bpf, bpf_len);
-
+	pysetvar("SECCOMP_BLOCK_TIOCSTI", (unsigned char *)filter, sizeof(filter));
 	return 0;
 }
