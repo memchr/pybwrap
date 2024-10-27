@@ -2,7 +2,6 @@
 import logging
 
 import platformdirs
-
 from pybwrap import BindMode, BwrapSandbox
 import sys
 import os
@@ -65,7 +64,8 @@ def main():
         type=str,
         help="Use a wine prefix, the default is $_prefix.",
     )
-    args, command = parser.parse_args()
+    parser.add_args_command()
+    args = parser.parse_args()
 
     logger.setLevel(args.loglevel)
 
@@ -159,12 +159,13 @@ def main():
         sandbox.setenv(WINEPREFIX=str(sandbox.resolve_path(prefix)))
         sandbox.bind(prefix, mode=BindMode.RW)
         adverb = ["wine"]
+
     if args.shell:
         adverb = []
 
     Path(prefix).mkdir(exist_ok=True)
     sandbox.dir(prefix)
-    sandbox.exec(adverb + command)
+    sandbox.exec(adverb + args.command)
 
 
 if __name__ == "__main__":

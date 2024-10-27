@@ -34,9 +34,15 @@ def handle_binds(binds: list[str], callback: Callable):
 
 
 class BwrapArgumentParser(argparse.ArgumentParser):
-    def __init__(self, *args, enable_all=False, default_cmd=None, **kwargs):
+    def __init__(
+        self,
+        *args,
+        enable_all_flags=False,
+        default_cmd=None,
+        **kwargs,
+    ):
         super().__init__(*args, add_help=False, **kwargs)
-        if enable_all:
+        if enable_all_flags:
             self.add_flag_keep()
             self.add_flag_dbus()
             self.add_flag_x11()
@@ -59,14 +65,8 @@ class BwrapArgumentParser(argparse.ArgumentParser):
         self.add_argument(
             "--loglevel", type=str, default="error", help="Logging level."
         )
-
         self.add_argument(
             "--help", action="store_true", help="Show this help message and exit."
-        )
-        self.add_argument(
-            "command",
-            nargs=argparse.REMAINDER,
-            help="Command to run with bwrap",
         )
         self.default_cmd = default_cmd
 
@@ -87,16 +87,17 @@ class BwrapArgumentParser(argparse.ArgumentParser):
         hostname: str
         keep_user: bool
         keep_hostname: bool
+        command: list[str]
         locale: str
         v: tuple[str]
         loglevel: int
 
-    def parse_args(self, *args, **kwargs) -> tuple[BwrapArgs, list[str]]:
-        args, unknown = super().parse_known_args(*args, **kwargs)
+    def parse_args(self, *args, **kwargs) -> BwrapArgs:
+        args: BwrapArgumentParser.BwrapArgs = super().parse_args(*args, **kwargs)
 
         if args.help:
             self.print_help()
-            print("\nnotes:\n  Unrecognized arguments will be passed to bwrap")
+            print("\nnotes:\n  Pass bwrap flags after `--`")
             sys.exit(0)
 
         if len(args.command) == 0:
@@ -106,13 +107,14 @@ class BwrapArgumentParser(argparse.ArgumentParser):
                 self.print_help()
                 print("\nError: Command required", file=sys.stderr)
                 sys.exit(1)
-        command = unknown + (
-            args.command[1:] if args.command[0] == "--" else args.command
-        )
+
+        # remove leading "--"
+        if args.command[0] == "--":
+            args.command.pop(0)
 
         args.loglevel = LOGLEVEL_MAP.get(getattr(args, "loglevel"), logging.ERROR)
 
-        return args, command
+        return args
 
     def add_flag_profile(self):
         self.add_argument(
@@ -221,6 +223,13 @@ class BwrapArgumentParser(argparse.ArgumentParser):
             "-m", "--mangohud", action="store_true", help="Enable mangohud."
         )
 
+    def add_args_command(self):
+        self.add_argument(
+            "command",
+            nargs=argparse.REMAINDER,
+            help="Command to run with bwrap",
+        )
+
 
 def main():
     logging.basicConfig(
@@ -230,10 +239,11 @@ def main():
 
     parser = BwrapArgumentParser(
         description="Create new bubblewrap container",
-        enable_all=True,
+        enable_all_flags=True,
     )
+    parser.add_args_command()
 
-    args, command = parser.parse_args()
+    args = parser.parse_args()
 
     sandbox = BwrapSandbox(
         user=args.user,
@@ -269,4 +279,4 @@ def main():
     sandbox.home_bind_many("downloads", "tmp", mode=BindMode.RW)
     if args.v:
         handle_binds(args.v, sandbox.bind)
-    sandbox.exec(command)
+    sandbox.exec(args.command)

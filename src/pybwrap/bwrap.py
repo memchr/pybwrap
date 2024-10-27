@@ -398,11 +398,10 @@ class Bwrap:
         return path_
 
     def exec(self, command: list[str]):
-        """Start the bwrap container
+        """Start bwrap container
 
         Args:
-            command (list[str]): commands to run. can be prepended with
-            addtional bwrap arguments
+            command (list[str]): command to run
         """
 
         # fix pathes in command
