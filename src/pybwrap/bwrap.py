@@ -404,7 +404,7 @@ class Bwrap:
             command (list[str]): command to run
         """
 
-        # fix pathes in command
+        # fix paths in command
         host_home = str(self._host_home)
         for i, v in enumerate(command):
             if v[0] == "/" and host_home in v:

@@ -69,7 +69,7 @@ def main():
     args = parser.parse_args()
 
     if len(args.command) == 0:
-        parser.error("a command is reqired")
+        parser.error("a command is required")
 
     logger.setLevel(args.loglevel)
 
