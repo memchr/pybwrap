@@ -289,16 +289,18 @@ class Bwrap:
         for fs in paths:
             self.args.extend(("--tmpfs", str(self.resolve_path(fs))))
 
-    def file(self, content: str, dest: str, perms=None):
+    def file(self, content: str | bytes, dest: str, perms=None):
         """Copy from file descriptor to dest
 
         Default permission is 0666
         """
+        if isinstance(content, str):
+            content = content.encode()
         if perms:
             self.args.extend(("--perms", str(perms)))
         r, w = os.pipe()
         os.set_inheritable(r, True)
-        os.write(w, content.encode())
+        os.write(w, content)
         self.args.extend(("--file", str(r), str(self.resolve_path(dest))))
 
     def bind_many(self, *bind_specs: Union[str, dict], mode=BindMode.RO):
