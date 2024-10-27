@@ -8,6 +8,8 @@ from glob import glob
 from pathlib import Path
 from typing import Callable, Optional, Self, TypedDict, Union, Unpack
 
+from pybwrap._secomp import SECCOMP_FILTER
+
 
 class BindMode(Enum):
     RW = "rw"
@@ -88,6 +90,7 @@ class Bwrap:
         self._init_home(kwargs.get("profile"))
         self._init_env(kwargs.get("path"), kwargs.get("clearenv", True))
         self._init_system_id()
+        self._init_seccomp()
 
     def _init_container(self, rootfs, keep_child):
         """Base system"""
@@ -258,6 +261,12 @@ class Bwrap:
         self.file(self.hostname, "/etc/hostname")
         self.file(f"{self.user}:100000:65536\n", "/etc/subuid")
         self.file(f"{self.user}:100000:65536\n", "/etc/subgid")
+
+    def _init_seccomp(self):
+        r, w = os.pipe()
+        os.set_inheritable(r, True)
+        os.write(w, SECCOMP_FILTER)
+        self.args.extend(("--seccomp", str(r)))
 
     @staticmethod
     def format_bind_args(src, dest, mode):
