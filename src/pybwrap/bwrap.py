@@ -1,7 +1,6 @@
 from enum import Enum
 from glob import glob
 from pathlib import Path
-import sys
 from textwrap import dedent
 from typing import Any, Callable, Self, TypedDict, Unpack
 import functools
@@ -9,9 +8,9 @@ import logging
 import os
 import socket
 
+
 from pybwrap._secomp import SECCOMP_BLOCK_TIOCSTI
 from pybwrap.constants import (
-    ETC_WHITELIST,
     F_ETC_GROUP,
     F_ETC_HOSTNAME,
     F_ETC_NSSWITCH,
@@ -120,7 +119,7 @@ class Bwrap:
             "--dir", "/var",
             "--dir", "/run",
             "--unsetenv", "TMUX",
-            "--seccomp", str(self.getfd(SECCOMP_BLOCK_TIOCSTI)),
+            "--seccomp", str(self.openfd(SECCOMP_BLOCK_TIOCSTI)),
         ]  # fmt: skip
 
         if rootfs is None:
@@ -244,15 +243,21 @@ class Bwrap:
 
         cp = self.bind_data
         cp(F_ETC_NSSWITCH, "/etc/nsswitch.conf")
-        cp(
-            F_ETC_PASSWD.format(user=self.user, uid=uid, gid=gid, home=self.home),
-            "/etc/passwd",
-        )
-        cp(F_ETC_GROUP.format(user=self.user, gid=gid), "/etc/group")
+        passwd_f = F_ETC_PASSWD.format(user=self.user, uid=uid, gid=gid, home=self.home)
+        group_f = F_ETC_GROUP.format(user=self.user, gid=gid)
+        subuid_f = f"{self.user}:100000:65536\n"
+        cp(passwd_f, "/etc/passwd")
+        cp(passwd_f, "/etc/passwd.OLD")
+        cp(passwd_f, "/etc/passwd-")
+        cp(group_f, "/etc/group")
+        cp(group_f, "/etc/group-")
         cp(F_ETC_HOSTNAME.format(hostname=self.hostname), "/etc/hosts")
         cp(f"{self.hostname}\n", "/etc/hostname")
-        cp(f"{self.user}:100000:65536\n", "/etc/subuid")
-        cp(f"{self.user}:100000:65536\n", "/etc/subgid")
+        cp(subuid_f, "/etc/subuid")
+        cp(subuid_f, "/etc/subuid-")
+        cp(subuid_f, "/etc/subgid")
+        cp(subuid_f, "/etc/subgid-")
+        cp(b"", "/etc/fstab")
 
     @staticmethod
     def format_bind_args(src: _PathLike, dest: _PathLike, mode):
@@ -379,7 +384,7 @@ class Bwrap:
             self.args.extend(("--tmpfs", str(self.resolve_path(fs))))
 
     @staticmethod
-    def getfd(content: str | bytes) -> int:
+    def openfd(content: str | bytes) -> int:
         """Get file descriptor of content"""
         r, w = os.pipe()
         os.set_inheritable(r, True)
@@ -388,13 +393,29 @@ class Bwrap:
         os.write(w, content)
         return r
 
+    class _FileArgs(TypedDict):
+        perms: str | None
+        anchor: _PathLike | None
+        asis: bool
+
+    def openfd_at(self, content: str | bytes, dest, **kwargs: Unpack[_FileArgs]) -> int:
+        dest = self.resolve_path(
+            dest,
+            anchor=kwargs.get("anchor"),
+            translate=not kwargs.get("asis", False),
+        )
+        perms = kwargs.get("perms")
+        if perms:
+            self.args.extend(("--perms", str(perms)))
+        fd = self.openfd(content)
+
+        return fd, dest
+
     def file(
         self,
         content: str | bytes,
         dest: _PathLike,
-        perms=None,
-        anchor=None,
-        asis=False,
+        **opts: Unpack[_FileArgs],
     ):
         """Copy from file descriptor to path in container
 
@@ -403,32 +424,23 @@ class Bwrap:
             dest (_PathLike): File location
             perms (_type_, optional): Permission. Defaults to 0666
         """
-        dest = self.resolve_path(dest, anchor=anchor, translate=not asis)
-
-        if perms:
-            self.args.extend(("--perms", str(perms)))
-
-        self.args.extend(("--file", str(self.getfd(content)), str(dest)))
+        fd, dest = self.openfd_at(content, dest, **opts)
+        self.args.extend(("--file", str(fd), str(dest)))
 
     def bind_data(
         self,
         content: str | bytes,
         dest: _PathLike,
-        perms=None,
-        anchor=None,
         mode=BindMode.RO,
-        asis=False,
+        **opts: Unpack[_FileArgs],
     ):
         """Bind data from file descriptor to path in container"""
-        dest = self.resolve_path(dest, anchor=anchor, translate=not asis)
-
-        if perms:
-            self.args.extend(("--perms", str(perms)))
+        fd, dest = self.openfd_at(content, dest, **opts)
 
         if mode == BindMode.RO:
-            self.args.extend(("--ro-bind-data", str(self.getfd(content)), str(dest)))
+            self.args.extend(("--ro-bind-data", str(fd), str(dest)))
         elif mode == BindMode.RW:
-            self.args.extend(("--bind-data", str(self.getfd(content)), str(dest)))
+            self.args.extend(("--bind-data", str(fd), str(dest)))
 
     def setenv(self, **kwargs: Any):
         for var, value in kwargs.items():
@@ -476,7 +488,7 @@ class Bwrap:
         # launch the container
         os.execvp(
             "bwrap",
-            ["bwrap", "--args", str(self.getfd("\0".join(self.args)))] + command,
+            ["bwrap", "--args", str(self.openfd("\0".join(self.args)))] + command,
         )
 
     def _debug_print_args(self, command):

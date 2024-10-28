@@ -124,6 +124,46 @@ class TestBwrap(unittest.TestCase):
             mock_write.assert_called_once_with(4, content.encode())
             self.assertEqual(["--file", "3", dest], self.bwrap.args)
 
+    def test_bind_data(self):
+        content = "test content"
+        dest = "/etc/testfile.conf"
+        self.clear_args()
+        with patch("os.pipe", return_value=(3, 4)), patch("os.write") as mock_write:
+            self.bwrap.bind_data(content, dest)
+            mock_write.assert_called_once_with(4, content.encode())
+            self.assertEqual(["--ro-bind-data", "3", dest], self.bwrap.args)
+
+    def test_bind_data_home(self):
+        content = "test content"
+        dest = HOME / "testfile.conf"
+        self.clear_args()
+        with patch("os.pipe", return_value=(3, 4)), patch("os.write") as mock_write:
+            self.bwrap.bind_data(content, dest)
+            mock_write.assert_called_once_with(4, content.encode())
+            self.assertEqual(
+                ["--ro-bind-data", "3", "/home/testuser/testfile.conf"], self.bwrap.args
+            )
+
+    def test_bind_data_rw(self):
+        content = "test content"
+        dest = "/etc/testfile.conf"
+        self.clear_args()
+        with patch("os.pipe", return_value=(3, 4)), patch("os.write") as mock_write:
+            self.bwrap.bind_data(content, dest, mode=BindMode.RW)
+            mock_write.assert_called_once_with(4, content.encode())
+            self.assertEqual(["--bind-data", "3", dest], self.bwrap.args)
+
+    def test_bind_data_perms(self):
+        content = "test content"
+        dest = "/etc/testfile.conf"
+        self.clear_args()
+        with patch("os.pipe", return_value=(3, 4)), patch("os.write") as mock_write:
+            self.bwrap.bind_data(content, dest, perms="0775")
+            mock_write.assert_called_once_with(4, content.encode())
+            self.assertEqual(
+                ["--perms", "0775", "--ro-bind-data", "3", dest], self.bwrap.args
+            )
+
     def test_bind_relative_path_to_host_home(self):
         self.clear_args()
         self.bwrap.bind("/src", Path.home() / "dest")
