@@ -1,6 +1,7 @@
 import functools
 import logging
 import os
+import shutil
 import socket
 from textwrap import dedent
 from enum import Enum
@@ -16,6 +17,9 @@ def ensure_path(path) -> Path:
         return path
     else:
         return Path(path)
+
+
+_PathLike = Union[Path, str]
 
 
 class BindMode(Enum):
@@ -93,8 +97,11 @@ class Bwrap:
             self.cwd = self.home / self.cwd.relative_to(self.host_home)
         self.logger.info(f"container CWD: {self.cwd}")
 
+        profile = kwargs.get("profile")
+        self.profile: Optional[Path] = Path(profile) if profile else None
+
         self._init_container(kwargs.get("rootfs"), kwargs.get("keep_child", False))
-        self._init_home(kwargs.get("profile"))
+        self._init_home(self.profile)
         self._init_env(kwargs.get("path"), kwargs.get("clearenv", True))
         self._init_system_id()
         self._init_seccomp()
@@ -277,7 +284,7 @@ class Bwrap:
         self.args.extend(("--seccomp", str(r)))
 
     @staticmethod
-    def format_bind_args(src: Path | str, dest: Path | str, mode):
+    def format_bind_args(src: _PathLike, dest: _PathLike, mode):
         """Format bind arguments based on binding mode"""
         return {
             BindMode.RW: ("--bind-try", str(src), str(dest)),
@@ -291,29 +298,29 @@ class Bwrap:
 
     def bind(
         self,
-        src: Path | str,
+        src: _PathLike,
         dest: Optional[Path | str] = None,
         mode: BindMode = BindMode.RO,
     ):
         dest = ensure_path(dest or src)
         # dest relative to CWD
         if not dest.is_absolute():
-            self.logger.debug("bind: dest relative to host cwd")
+            self.logger.debug("bind: resolve relative dest to host cwd")
             dest = self.cwd / dest
 
         self.args.extend(
             self.format_bind_args(str(src), str(self.resolve_path(dest)), mode)
         )
 
-    def dir(self, *dirs: Path | str):
+    def dir(self, *dirs: _PathLike):
         for dir in dirs:
             self.args.extend(("--dir", str(self.resolve_path(dir))))
 
-    def tmpfs(self, *paths: Path | str):
+    def tmpfs(self, *paths: _PathLike):
         for fs in paths:
             self.args.extend(("--tmpfs", str(self.resolve_path(fs))))
 
-    def file(self, content: str | bytes, dest: Path | str, perms=None):
+    def file(self, content: str | bytes, dest: _PathLike, perms=None):
         """Copy from file descriptor to dest
 
         Default permission is 0666
@@ -331,21 +338,46 @@ class Bwrap:
 
         self.args.extend(("--file", str(r), str(self.resolve_path(dest))))
 
-    def bind_many(self, *bind_specs: Union[Path | str, dict], mode=BindMode.RO):
-        """Bind many directories
+    def home_copy(
+        self,
+        src: _PathLike,
+        dest: Optional[_PathLike] = None,
+        override=False,
+    ):
+        """Copy file to container HOME"""
+        assert self.profile is not None
 
-        Args:
-            mode (BindMode, optional): Bind mode for Path|str bind specs. Defaults to BindMode.RO.
-        """
-        for spec in bind_specs:
-            if isinstance(spec, dict):
-                self.bind(**spec)
+        src = ensure_path(src)
+        if src.is_absolute() and not src.is_relative_to(self.host_home):
+            if dest is None:
+                raise ValueError(
+                    f"dest must be provided because src '{src}' is absolute path"
+                    " outside host home"
+                )
+        else:
+            src = self.host_home / src
+
+        if not src.exists():
+            self.logger.warning(f"copy: source '{src}' does not exist.")
+            return
+
+        dest = ensure_path(dest or src)
+        if not dest.is_absolute():
+            dest = self.profile / dest
+        elif dest.is_relative_to(self.host_home):
+            dest = self.profile / dest.relative_to(self.host_home)
+
+        if dest.exists():
+            if override:
+                self.logger.warning(f"copy: overriding '{dest}'")
             else:
-                self.bind(spec, mode=mode)
+                self.logger.warning(f"copy: destination '{dest}' already exists")
+                return
+        shutil.copytree(src, dest, dirs_exist_ok=True)
 
     def home_bind(
         self,
-        src: Path | str,
+        src: _PathLike,
         dest: Optional[Path | str] = None,
         mode: BindMode = BindMode.RO,
     ):
@@ -353,16 +385,32 @@ class Bwrap:
 
         Args:
             src (Path): Relative path to host home, or absolute path
-            dest (Optional[Path], optional): Must be a relative path to container home, Defaults to src
+            dest (Optional[Path], optional): If absolute, resolves to path relative to container home, Defaults to src
             mode (BindMode, optional): Defaults to read only
         """
         src = ensure_path(src)
-        dest = ensure_path(dest or src)
-        # source is relative to host HOME
         if not src.is_absolute():
             src = self.host_home / src
-        assert not dest.is_absolute()
-        self.bind(src, self.home / dest, mode)
+        dest = ensure_path(dest or src)
+        if not dest.is_absolute():
+            dest = self.home / dest
+        # source is relative to host HOME
+        self.bind(src, dest, mode)
+
+    def _multi_file_op(self, op, specs, **kwargs):
+        for spec in specs:
+            if isinstance(spec, dict):
+                op(**spec)
+            else:
+                op(spec, **kwargs)
+
+    def bind_many(self, *bind_specs: Union[Path | str, dict], mode=BindMode.RO):
+        """Bind many directories
+
+        Args:
+            mode (BindMode, optional): Bind mode for Path|str bind specs. Defaults to BindMode.RO.
+        """
+        self._multi_file_op(self.bind, bind_specs, mode=mode)
 
     def home_bind_many(self, *bind_specs: Union[str, Path, dict], mode=BindMode.RO):
         """Bind many directories from host HOME to container HOME
@@ -370,11 +418,10 @@ class Bwrap:
         Args:
             mode (BindMode, optional): bind mode for str|Path bind_spec. Defaults to BindMode.RO.
         """
-        for spec in bind_specs:
-            if isinstance(spec, dict):
-                self.home_bind(**spec)
-            else:
-                self.home_bind(spec, mode=mode)
+        self._multi_file_op(self.home_bind, bind_specs, mode=mode)
+
+    def home_copy_many(self, *specs: Union[Path, str, dict], override=False):
+        self._multi_file_op(self.home_copy, specs, override=override)
 
     def setenv(self, **kwargs: Any):
         for var, value in kwargs.items():
@@ -422,8 +469,8 @@ class Bwrap:
             dest = self.cwd
         self.args.extend(("--chdir", str(dest)))
 
-    def resolve_path(self, path: Path | str) -> Path:
-        """Fix path that contains host home"""
+    def resolve_path(self, path: _PathLike) -> Path:
+        """Resolve path that contains host HOME to container HOME or base"""
         path = ensure_path(path)
 
         if path.is_relative_to(self.host_home):
