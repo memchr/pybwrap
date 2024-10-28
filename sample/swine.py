@@ -2,10 +2,10 @@
 import logging
 
 import platformdirs
-from pybwrap import BindMode, BwrapSandbox
+from pybwrap import BindMode, BwrapSandbox, BwrapArgumentParser, handle_binds, HOME
 import sys
 import os
-from pathlib import Path, HOME, BwrapArgumentParser, handle_binds
+from pathlib import Path
 
 
 DEFAULT_WINE_PREFIX = Path.home() / ".wine"
@@ -29,6 +29,7 @@ def main():
     parser.add_flag_keep()
     parser.add_flag_keep_user()
     parser.add_flag_bind()
+    parser.add_flag_etc()
 
     parser.add_flag_mangohud()
     parser.add_flag_nvidia()

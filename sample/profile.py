@@ -37,6 +37,7 @@ def main():
     g.add_argument("-l", "--list", action="store_true", help="List all profiles")
     parser.add_args_command()
     parser.add_flag_bind()
+    parser.add_flag_etc()
     parser.add_argument(
         "-C",
         "--create",

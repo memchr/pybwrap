@@ -3,7 +3,7 @@ from .bwrap import (
     Bwrap,
     BwrapSandbox,
 )
-from .cli import BwrapArgumentParser, BINDMODE_MAP, LOGLEVEL_MAP
+from .cli import BwrapArgumentParser, BINDMODE_MAP, LOGLEVEL_MAP, handle_binds
 from .path import ensure_path, _PathLike
 from .constants import (
     XDG_CACHE_HOME,
@@ -21,6 +21,7 @@ __all__ = [
     "BwrapArgumentParser",
     "BINDMODE_MAP",
     "LOGLEVEL_MAP",
+    "handle_binds",
     "ensure_path",
     "_PathLike",
     "HOME",
