@@ -5,6 +5,8 @@ import re
 from pathlib import Path
 from typing import Callable
 
+from pybwrap.constants import ETC_WHITELIST
+
 from . import BwrapSandbox, BindMode
 
 BINDMODE_MAP = {
@@ -54,6 +56,7 @@ class BwrapArgs:
     locale: str
     bind: tuple[str]
     loglevel: int
+    etc: bool
 
 
 class BwrapArgumentParser(argparse.ArgumentParser):
@@ -88,6 +91,7 @@ class BwrapArgumentParser(argparse.ArgumentParser):
             self.add_flag_desktop()
             self.add_flag_mangohud()
             # mount points
+            self.add_flag_etc()
             self.add_flag_rootfs()
             self.add_flag_profile()
             self.add_flag_bind()
@@ -110,6 +114,11 @@ class BwrapArgumentParser(argparse.ArgumentParser):
         args.loglevel = LOGLEVEL_MAP.get(getattr(args, "loglevel"), logging.ERROR)
 
         return args
+
+    def add_flag_etc(self):
+        self.system_flags.add_argument(
+            "-e", "--etc", action="store_true", help="Enable etc whitelisting"
+        )
 
     def add_flag_profile(self):
         self.mount_flags.add_argument(
@@ -260,6 +269,7 @@ def main():
         keep_hostname=args.keep_hostname,
         loglevel=args.loglevel,
         keep_child=args.keep,
+        etc_binds=ETC_WHITELIST if args.etc else None,
     )
     sandbox.unshare(net=args.unshare_net)
     if args.dbus:

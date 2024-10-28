@@ -72,7 +72,7 @@ class Bwrap:
         "keep_user": False,
         "keep_hostname": False,
         "profile": None,
-        "etc_binds": ETC_WHITELIST,
+        "etc_binds": None,
         "clearenv": True,
         "path": DEFAULT_PATH,
         "keep_child": False,
