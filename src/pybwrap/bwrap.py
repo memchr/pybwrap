@@ -6,9 +6,16 @@ from textwrap import dedent
 from enum import Enum
 from glob import glob
 from pathlib import Path
-from typing import Callable, Optional, Self, TypedDict, Union, Unpack
+from typing import Any, Callable, Optional, Self, TypedDict, Union, Unpack
 
 from pybwrap._secomp import SECCOMP_BLOCK_TIOCSTI
+
+
+def ensure_path(path) -> Path:
+    if isinstance(path, Path):
+        return path
+    else:
+        return Path(path)
 
 
 class BindMode(Enum):
@@ -65,15 +72,15 @@ class Bwrap:
         self.logger = logging.getLogger("bwrap")
         self.logger.setLevel(kwargs.get("loglevel", logging.ERROR))
 
-        self._host_home = Path.home()
-        self._host_hostname = socket.gethostname()
+        self.host_home = Path.home()
+        self.host_hostname = socket.gethostname()
 
         self.user: str = kwargs.get("user", "user")
         self.hostname: str = kwargs.get("hostname", f"sandbox-{os.getpid()}")
         if kwargs.get("keep_user", False):
             self.user = os.getlogin()
         if kwargs.get("keep_hostname", False):
-            self.hostname = self._host_hostname
+            self.hostname = self.host_hostname
 
         self.home = Path("/home") / self.user
         self.logger.info(f"container HOME: {self.home}")
@@ -82,8 +89,8 @@ class Bwrap:
 
         # Adjusts the host's current working directory (CWD) for the container.
         self.cwd = Path.cwd()
-        if self.cwd.is_relative_to(self._host_home):
-            self.cwd = self.home / self.cwd.relative_to(self._host_home)
+        if self.cwd.is_relative_to(self.host_home):
+            self.cwd = self.home / self.cwd.relative_to(self.host_home)
         self.logger.info(f"container CWD: {self.cwd}")
 
         self._init_container(kwargs.get("rootfs"), kwargs.get("keep_child", False))
@@ -160,7 +167,7 @@ class Bwrap:
             ".config/user-dirs.locale",
         )
 
-    def _init_env(self, path, clearenv):
+    def _init_env(self, path: tuple | list, clearenv):
         if clearenv:
             # Do not inherit host env
             self.logger.info("Environment variables cleared")
@@ -178,11 +185,11 @@ class Bwrap:
             LOGNAME=self.user,
             USER=self.user,
             HOSTNAME=self.hostname,
-            XDG_RUNTIME_DIR=str(self.xdg_runtime_dir),
-            XDG_CONFIG_HOME=str(self.xdg_config_home),
-            XDG_CACHE_HOME=str(self.xdg_cache_home),
-            XDG_DATA_HOME=str(self.xdg_data_home),
-            XDG_STATE_HOME=str(self.xdg_state_home),
+            XDG_RUNTIME_DIR=self.xdg_runtime_dir,
+            XDG_CONFIG_HOME=self.xdg_config_home,
+            XDG_CACHE_HOME=self.xdg_cache_home,
+            XDG_DATA_HOME=self.xdg_data_home,
+            XDG_STATE_HOME=self.xdg_state_home,
             GTK_A11Y="none",
         )
         self.logger.info(f"set PATH to {path}")
@@ -209,7 +216,7 @@ class Bwrap:
 
     def _init_system_id(self):
         """Initialize system identity, such as hostname and user name"""
-        if self.hostname != self._host_hostname:
+        if self.hostname != self.host_hostname:
             self.logger.info(f"Hostname changed to {self.hostname}")
             self.args.extend([
                 "--unshare-uts",
@@ -270,7 +277,7 @@ class Bwrap:
         self.args.extend(("--seccomp", str(r)))
 
     @staticmethod
-    def format_bind_args(src, dest, mode):
+    def format_bind_args(src: Path | str, dest: Path | str, mode):
         """Format bind arguments based on binding mode"""
         return {
             BindMode.RW: ("--bind-try", str(src), str(dest)),
@@ -282,70 +289,94 @@ class Bwrap:
         for src, dest in symlink_spec:
             self.args.extend(["--symlink", str(src), str(self.resolve_path(dest))])
 
-    def bind(self, src: str, dest: Optional[str] = None, mode: BindMode = BindMode.RO):
-        dest: Path = Path(dest or src)
+    def bind(
+        self,
+        src: Path | str,
+        dest: Optional[Path | str] = None,
+        mode: BindMode = BindMode.RO,
+    ):
+        dest = ensure_path(dest or src)
         # dest relative to CWD
         if not dest.is_absolute():
             self.logger.debug("bind: dest relative to host cwd")
             dest = self.cwd / dest
 
-        self.args.extend(self.format_bind_args(src, str(self.resolve_path(dest)), mode))
+        self.args.extend(
+            self.format_bind_args(str(src), str(self.resolve_path(dest)), mode)
+        )
 
-    def dir(self, *dirs: str):
+    def dir(self, *dirs: Path | str):
         for dir in dirs:
             self.args.extend(("--dir", str(self.resolve_path(dir))))
 
-    def tmpfs(self, *paths: str):
+    def tmpfs(self, *paths: Path | str):
         for fs in paths:
             self.args.extend(("--tmpfs", str(self.resolve_path(fs))))
 
-    def file(self, content: str | bytes, dest: str, perms=None):
+    def file(self, content: str | bytes, dest: Path | str, perms=None):
         """Copy from file descriptor to dest
 
         Default permission is 0666
         """
-        if isinstance(content, str):
-            content = content.encode()
-        if perms:
-            self.args.extend(("--perms", str(perms)))
         r, w = os.pipe()
         os.set_inheritable(r, True)
+
+        if isinstance(content, str):
+            content = content.encode()
+
+        if perms:
+            self.args.extend(("--perms", str(perms)))
+
         os.write(w, content)
+
         self.args.extend(("--file", str(r), str(self.resolve_path(dest))))
 
-    def bind_many(self, *bind_specs: Union[str, dict], mode=BindMode.RO):
+    def bind_many(self, *bind_specs: Union[Path | str, dict], mode=BindMode.RO):
+        """Bind many directories
+
+        Args:
+            mode (BindMode, optional): Bind mode for Path|str bind specs. Defaults to BindMode.RO.
+        """
         for spec in bind_specs:
-            if isinstance(spec, str):
-                self.bind(spec, mode=mode)
-            elif isinstance(spec, dict):
+            if isinstance(spec, dict):
                 self.bind(**spec)
+            else:
+                self.bind(spec, mode=mode)
 
     def home_bind(
-        self, src: str, dest: Optional[str] = None, mode: BindMode = BindMode.RO
+        self,
+        src: Path | str,
+        dest: Optional[Path | str] = None,
+        mode: BindMode = BindMode.RO,
     ):
-        """Bind directories under $HOME
+        """Bind many directories from host HOME to container HOME
 
         Args:
             src (Path): Relative path to host home, or absolute path
             dest (Optional[Path], optional): Must be a relative path to container home, Defaults to src
             mode (BindMode, optional): Defaults to read only
         """
-        host_src = Path(src)
-        if not host_src.is_absolute():
-            host_src = self._host_home / src
-        dest = dest or src
-        assert not Path(dest).is_absolute()
-        sandbox_dest = self.home / dest
-        self.bind(host_src, sandbox_dest, mode)
+        src = ensure_path(src)
+        dest = ensure_path(dest or src)
+        # source is relative to host HOME
+        if not src.is_absolute():
+            src = self.host_home / src
+        assert not dest.is_absolute()
+        self.bind(src, self.home / dest, mode)
 
-    def home_bind_many(self, *bind_specs: Union[str, dict], mode=BindMode.RO):
+    def home_bind_many(self, *bind_specs: Union[str, Path, dict], mode=BindMode.RO):
+        """Bind many directories from host HOME to container HOME
+
+        Args:
+            mode (BindMode, optional): bind mode for str|Path bind_spec. Defaults to BindMode.RO.
+        """
         for spec in bind_specs:
-            if isinstance(spec, str):
-                self.home_bind(spec, mode=mode)
-            elif isinstance(spec, dict):
+            if isinstance(spec, dict):
                 self.home_bind(**spec)
+            else:
+                self.home_bind(spec, mode=mode)
 
-    def setenv(self, **kwargs):
+    def setenv(self, **kwargs: Any):
         for var, value in kwargs.items():
             if value is None or var == "LC_ALL":
                 continue
@@ -381,22 +412,23 @@ class Bwrap:
                 self.logger.debug(f"arg: {a}")
             self.logger.debug(f"arg: {command}")
 
-    def chdir(self, dest: Optional[str] = None):
+    def chdir(self, dest: Optional[Path | str] = None):
         """Change directory to dest
 
         Args:
             dest (str, optional): if None, change to current working directory
         """
         if dest is None:
-            dest = str(self.cwd)
-        self.args.extend(("--chdir", dest))
+            dest = self.cwd
+        self.args.extend(("--chdir", str(dest)))
 
-    def resolve_path(self, path: str) -> Path:
+    def resolve_path(self, path: Path | str) -> Path:
         """Fix path that contains host home"""
-        path_ = Path(path)
-        if path_.is_relative_to(self._host_home):
-            path_ = self.home / path_.relative_to(self._host_home)
-        return path_
+        path = ensure_path(path)
+
+        if path.is_relative_to(self.host_home):
+            path = self.home / path.relative_to(self.host_home)
+        return path
 
     def exec(self, command: list[str]):
         """Start bwrap container
@@ -406,7 +438,7 @@ class Bwrap:
         """
 
         # fix paths in command
-        host_home = str(self._host_home)
+        host_home = str(self.host_home)
         for i, v in enumerate(command):
             if v[0] == "/" and host_home in v:
                 command[i] = str(self.resolve_path(v))
@@ -452,7 +484,7 @@ class BwrapSandbox(Bwrap):
     def dbus(self):
         self.bind_many(
             "/run/dbus",
-            str(self.xdg_runtime_dir / "bus"),
+            self.xdg_runtime_dir / "bus",
             mode=BindMode.RW,
         )
         self.keepenv("DBUS_SESSION_BUS_ADDRESS")
@@ -462,7 +494,7 @@ class BwrapSandbox(Bwrap):
         self.bind_many(
             "/tmp/.X11-unix",
             "/tmp/.ICE-unix",
-            str(self.home / ".Xauthority"),
+            self.home / ".Xauthority",
             *glob(str(self.xdg_runtime_dir / "ICE*")),
             mode=BindMode.RW,
         )

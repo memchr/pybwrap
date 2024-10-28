@@ -83,7 +83,7 @@ class TestBwrap(unittest.TestCase):
             self.assertIn(dest, self.bwrap.args)
 
     def test_bind_relative_path_to_host_home(self):
-        self.bwrap.bind("/src", str(Path.home() / "dest"))
+        self.bwrap.bind("/src", Path.home() / "dest")
         self.assertIn(
             f"--ro-bind-try /src {str(self.bwrap.home / "dest")}",
             " ".join(self.bwrap.args),

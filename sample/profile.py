@@ -59,7 +59,7 @@ def main():
     if len(args.command) == 0:
         parser.error("a command is required")
 
-    sandbox = BwrapSandbox(
+    sandbox: BwrapSandbox = BwrapSandbox(
         clearenv=True,
         profile=str(profile_path),
         keep_child=args.keep,
@@ -67,6 +67,7 @@ def main():
         loglevel=args.loglevel,
         path=(".bin",) + Bwrap.DEFAULT_PATH,
     )
+    sandbox.resolve_path
     logger.setLevel(args.loglevel)
 
     if not profile_path.exists():
@@ -85,6 +86,7 @@ def main():
     sandbox.home_bind_many(
         "downloads",
         "tmp",
+        ".local/bin",
         {"src": ".local/bin", "mode": BindMode.RO},
         mode=BindMode.RW,
     )
@@ -97,15 +99,18 @@ def main():
     sandbox.exec(args.command)
 
 
-def copy(src, dst):
-    src, dst = str(src), str(dst)
+def copy(src, dest=None):
+    dest = dest or src
+    if not isinstance(src, Path):
+        src = Path(src)
+    if not isinstance(dest, Path):
+        dest = Path(dest)
+    if not src.exists():
+        logger.warning(f"Source directory '{src}' does not exist.")
+        return
     try:
-        if not os.path.exists(src):
-            logger.warning(f"Source directory '{src}' does not exist.")
-            return
-
-        shutil.copytree(src, dst)
-        logger.info(f"Directory '{src}' copied to '{dst}' successfully.")
+        shutil.copytree(src, dest)
+        logger.info(f"Directory '{src}' copied to '{dest}' successfully.")
     except Exception as e:
         print(f"An error occurred: {e}")
         sys.exit(1)
