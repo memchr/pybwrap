@@ -9,7 +9,7 @@ import shutil
 import platformdirs
 
 from pybwrap.bwrap import BindMode, Bwrap, BwrapSandbox
-from pybwrap.cli import BwrapArgumentParser
+from pybwrap.cli import BwrapArgumentParser, handle_binds
 
 PROFILE_STORAGE = Path.home() / "profiles"
 
@@ -34,6 +34,7 @@ def main():
     g.add_argument("profile", type=str, nargs="?", help="Profile to launch")
     g.add_argument("-l", "--list", action="store_true", help="List all profiles")
     parser.add_args_command()
+    parser.add_flag_bind()
     parser.add_argument(
         "-C",
         "--create",
@@ -88,6 +89,8 @@ def main():
         mode=BindMode.RW,
     )
     sandbox.dir(str(sandbox.home / ".bin"))
+    if args.bind:
+        handle_binds(args.bind, sandbox.bind)
     if args.cwd:
         sandbox.bind(os.getcwd(), mode=BindMode.RW)
         sandbox.chdir()
