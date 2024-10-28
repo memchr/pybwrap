@@ -183,6 +183,7 @@ class Bwrap:
             XDG_CACHE_HOME=str(self.xdg_cache_home),
             XDG_DATA_HOME=str(self.xdg_data_home),
             XDG_STATE_HOME=str(self.xdg_state_home),
+            GTK_A11Y="none",
         )
         self.logger.info(f"set PATH to {path}")
 
