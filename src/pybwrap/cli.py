@@ -32,7 +32,7 @@ def handle_binds(binds: list[str], callback: Callable):
         src = Path(m.group("src"))
         dest = Path(m.group("dest") or src)
         mode = BINDMODE_MAP[m.group("mode") or "r"]
-        callback(src, dest, mode)
+        callback(src, dest, mode=mode)
 
 
 class BwrapArgs:
