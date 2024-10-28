@@ -22,8 +22,11 @@ logger = logging.getLogger("profile")
 
 
 def main():
+    shell = os.getenv("SHELL", "bash")
     parser = BwrapArgumentParser(
-        description="Run wine in bubblewrap sandbox", add_help=True
+        description="Run wine in bubblewrap sandbox",
+        add_help=True,
+        default_cmd=[shell],
     )
     parser.add_flag_keep()
     parser.add_flag_cwd()
