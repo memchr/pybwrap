@@ -42,15 +42,15 @@ class BwrapArgumentParser(argparse.ArgumentParser):
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
-        self.id_flags = self.add_argument_group("system identification")
+        self.system_flags = self.add_argument_group("system options")
         self.feature_flags = self.add_argument_group("sandbox features")
-        self.mount_flags = self.add_argument_group("mount points")
+        self.mount_flags = self.add_argument_group("mount options")
 
         if enable_all_flags:
             self.add_flag_keep()
             self.add_flag_unshare_net()
             self.add_flag_locale()
-            # id
+            # system
             self.add_flag_user()
             self.add_flag_hostname()
             self.add_flag_keep_user()
@@ -167,7 +167,7 @@ class BwrapArgumentParser(argparse.ArgumentParser):
         )
 
     def add_flag_user(self):
-        self.id_flags.add_argument(
+        self.system_flags.add_argument(
             "-u",
             "--user",
             type=str,
@@ -176,7 +176,7 @@ class BwrapArgumentParser(argparse.ArgumentParser):
         )
 
     def add_flag_hostname(self):
-        self.id_flags.add_argument(
+        self.system_flags.add_argument(
             "-t",
             "--hostname",
             type=str,
@@ -194,12 +194,12 @@ class BwrapArgumentParser(argparse.ArgumentParser):
         )
 
     def add_flag_keep_user(self):
-        self.id_flags.add_argument(
+        self.system_flags.add_argument(
             "-U", "--keep-user", action="store_true", help="Use parent username."
         )
 
     def add_flag_keep_hostname(self):
-        self.id_flags.add_argument(
+        self.system_flags.add_argument(
             "-H", "--keep-hostname", action="store_true", help="Use parent hostname."
         )
 
