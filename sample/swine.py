@@ -73,12 +73,14 @@ def main():
 
     logger.setLevel(args.loglevel)
 
+    if os.path.basename(__file__) == "proton":
+        logger.debug("running as proton")
+        args.proton = True
+
     # Do not change user name when running wine on default prefix
     if args.prefix is None and not args.proton:
+        logger.debug("keep user name because default wine prefix is used")
         args.keep_user = True
-
-    if os.path.basename(__file__) == "proton":
-        args.proton = True
 
     sandbox = BwrapSandbox(
         hostname=f"wine-{os.getpid()}",
