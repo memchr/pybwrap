@@ -33,6 +33,29 @@ def handle_binds(binds: list[str], callback: Callable):
         callback(src, dest, mode)
 
 
+class BwrapArgs:
+    dbus: bool
+    x11: bool
+    wayland: bool
+    nvidia: bool
+    gpu: bool
+    audio: bool
+    cwd: bool
+    unshare_net: bool
+    desktop: bool
+    mangohud: bool
+    profile: str
+    keep: bool
+    user: str
+    hostname: str
+    keep_user: bool
+    keep_hostname: bool
+    command: list[str]
+    locale: str
+    bind: tuple[str]
+    loglevel: int
+
+
 class BwrapArgumentParser(argparse.ArgumentParser):
     def __init__(
         self,
@@ -73,28 +96,6 @@ class BwrapArgumentParser(argparse.ArgumentParser):
             "--loglevel", type=str, default="error", help="Logging level."
         )
         self.default_cmd = default_cmd
-
-    class BwrapArgs:
-        dbus: bool
-        x11: bool
-        wayland: bool
-        nvidia: bool
-        gpu: bool
-        audio: bool
-        cwd: bool
-        unshare_net: bool
-        desktop: bool
-        mangohud: bool
-        profile: str
-        keep: bool
-        user: str
-        hostname: str
-        keep_user: bool
-        keep_hostname: bool
-        command: list[str]
-        locale: str
-        bind: tuple[str]
-        loglevel: int
 
     def parse_args(self, *args, **kwargs) -> BwrapArgs:
         args: BwrapArgumentParser.BwrapArgs = super().parse_args(*args, **kwargs)
