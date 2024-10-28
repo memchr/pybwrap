@@ -4,6 +4,15 @@ from .bwrap import (
     BwrapSandbox,
 )
 from .cli import BwrapArgumentParser, BINDMODE_MAP, LOGLEVEL_MAP
+from .path import ensure_path, _PathLike
+from .constants import (
+    XDG_CACHE_HOME,
+    XDG_DATA_HOME,
+    XDG_STATE_HOME,
+    XDG_RUNTIME_DIR,
+    XDG_CONFIG_HOME,
+    HOME,
+)
 
 __all__ = [
     "BindMode",
@@ -12,4 +21,12 @@ __all__ = [
     "BwrapArgumentParser",
     "BINDMODE_MAP",
     "LOGLEVEL_MAP",
+    "ensure_path",
+    "_PathLike",
+    "HOME",
+    "XDG_RUNTIME_DIR",
+    "XDG_CONFIG_HOME",
+    "XDG_CACHE_HOME",
+    "XDG_DATA_HOME",
+    "XDG_STATE_HOME",
 ]

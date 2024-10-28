@@ -20,6 +20,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("profile")
 
+home = Path.home()
+
 
 def main():
     shell = os.getenv("SHELL", "bash")
@@ -83,12 +85,14 @@ def main():
 
     sandbox.unshare()
     sandbox.desktop()
-    sandbox.home_bind_many(
+    sandbox.bind_all(
         "downloads",
         "tmp",
         ".local/bin",
         {"src": ".local/bin", "mode": BindMode.RO},
         mode=BindMode.RW,
+        src_anchor=home,
+        dest_anchor=sandbox.home,
     )
     sandbox.dir(str(sandbox.home / ".bin"))
     if args.bind:

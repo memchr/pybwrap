@@ -2,10 +2,8 @@ import logging
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from cattr import override
 
-
-from pybwrap import Bwrap, BindMode
+from pybwrap import Bwrap, HOME
 from test_bwrap import TestBwrap
 
 logging.basicConfig(level=logging.DEBUG)
@@ -29,28 +27,6 @@ class TestBrapWithProfile(TestBwrap):
             f"--bind {str(self.bwrap.profile)} {str(self.bwrap.home)}", self.args
         )
 
-    def test_home_bind(self):
-        self.clear_args()
-        self.bwrap.home_bind(".cache")
-        self.assertEqual(
-            [
-                "--ro-bind-try",
-                str(Path.home() / ".cache"),
-                str(self.bwrap.home / ".cache"),
-            ],
-            self.bwrap.args,
-        )
-        self.clear_args()
-        self.bwrap.home_bind(".cache", "device/b", mode=BindMode.DEV)
-        self.assertEqual(
-            [
-                "--dev-bind-try",
-                str(Path.home() / ".cache"),
-                str(self.bwrap.home / "device/b"),
-            ],
-            self.bwrap.args,
-        )
-
     # @patch("shutil.copytree")
     # def test_home_copy(self, mock_copytree: MagicMock):
     #     self.bwrap.home_copy("")
@@ -62,7 +38,7 @@ class TestBrapWithProfile(TestBwrap):
         self.bwrap.home_copy(src, override=True)
         mock_path_exists.assert_called()
         mock_copytree.assert_called_once_with(
-            self.bwrap.host_home / src,
+            HOME / src,
             self.bwrap.profile / src,
             dirs_exist_ok=True,
         )
@@ -77,7 +53,7 @@ class TestBrapWithProfile(TestBwrap):
         self.bwrap.home_copy(src, dest, override=True)
         mock_path_exists.assert_called()
         mock_copytree.assert_called_once_with(
-            self.bwrap.host_home / src,
+            HOME / src,
             self.bwrap.profile / dest.relative_to(Path.home()),
             dirs_exist_ok=True,
         )

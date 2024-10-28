@@ -1,25 +1,23 @@
-import functools
-import logging
-import os
-import shutil
-import socket
-from textwrap import dedent
 from enum import Enum
 from glob import glob
 from pathlib import Path
-from typing import Any, Callable, Optional, Self, TypedDict, Union, Unpack
+from textwrap import dedent
+from typing import Any, Callable, Self, TypedDict, Unpack
+import functools
+import logging
+import os
+import socket
 
 from pybwrap._secomp import SECCOMP_BLOCK_TIOCSTI
-
-
-def ensure_path(path) -> Path:
-    if isinstance(path, Path):
-        return path
-    else:
-        return Path(path)
-
-
-_PathLike = Union[Path, str]
+from pybwrap.constants import (
+    F_ETC_GROUP,
+    F_ETC_HOSTNAME,
+    F_ETC_NSSWITCH,
+    F_ETC_PASSWD,
+    HOME,
+    XDG_CACHE_HOME,
+)
+from pybwrap.path import _PathLike, ensure_path
 
 
 class BindMode(Enum):
@@ -28,8 +26,20 @@ class BindMode(Enum):
     DEV = "dev"
 
 
+class BindOpts(TypedDict):
+    mode: BindMode
+    asis: bool
+    dest_anchor: _PathLike | None = (None,)
+    src_anchor: _PathLike | None = (None,)
+
+
+class BindSpec(BindOpts):
+    src: _PathLike
+    dest: _PathLike | None
+
+
 class Bwrap:
-    _DEFAULT_ETC_BINDS = (
+    DEFAULT_ETC_BINDS = (
         "bash.bashrc", "bash_completion.d", "binfmt.d", "bluetooth",
         "ca-certificates", "conf.d", "dconf", "default", "environment",
         "ethertypes", "fonts", "fuse.conf", "gai.conf", "grc.conf", "grc.fish",
@@ -64,50 +74,60 @@ class Bwrap:
         hostname: str
         keep_user: bool
         keep_hostname: bool
-        profile: str
+        profile: str | None
         etc_binds: tuple[str]
-        loglevel: int
-        path: tuple[str]
         clearenv: bool
+        path: tuple[str]
         keep_child: bool
-        rootfs: Path
+        rootfs: Path | None
+        loglevel: int
+
+    DEFAULT_OPTIONS: Options = {
+        "user": "user",
+        "hostname": f"sandbox-{os.getpid()}",
+        "keep_user": False,
+        "keep_hostname": False,
+        "profile": None,
+        "etc_binds": DEFAULT_ETC_BINDS,
+        "clearenv": True,
+        "path": DEFAULT_PATH,
+        "keep_child": False,
+        "rootfs": None,
+        "loglevel": logging.DEBUG,
+    }
 
     def __init__(self, **kwargs: Unpack[Options]):
+        opts = self.DEFAULT_OPTIONS | kwargs
         self.logger = logging.getLogger("bwrap")
         self.logger.setLevel(kwargs.get("loglevel", logging.ERROR))
 
-        self.host_home = Path.home()
-        self.host_hostname = socket.gethostname()
-
-        self.user: str = kwargs.get("user", "user")
-        self.hostname: str = kwargs.get("hostname", f"sandbox-{os.getpid()}")
-        if kwargs.get("keep_user", False):
+        self.etc_binds = opts["etc_binds"]
+        self.user = opts["user"]
+        self.hostname = opts["hostname"]
+        if opts["keep_user"]:
             self.user = os.getlogin()
-        if kwargs.get("keep_hostname", False):
-            self.hostname = self.host_hostname
+        if opts["keep_hostname"]:
+            self.hostname = socket.gethostname()
 
         self.home = Path("/home") / self.user
         self.logger.info(f"container HOME: {self.home}")
 
-        self.etc_binds: tuple[str] = kwargs.get("etc_binds", self._DEFAULT_ETC_BINDS)
-
         # Adjusts the host's current working directory (CWD) for the container.
-        self.cwd = Path.cwd()
-        if self.cwd.is_relative_to(self.host_home):
-            self.cwd = self.home / self.cwd.relative_to(self.host_home)
+        self.host_cwd = Path.cwd()
+        self.cwd = self.resolve_path(self.host_cwd)
         self.logger.info(f"container CWD: {self.cwd}")
 
-        profile = kwargs.get("profile")
-        self.profile: Optional[Path] = Path(profile) if profile else None
+        profile = opts["profile"]
+        self.profile: Path | None = Path(profile) if profile else None
 
-        self._init_container(kwargs.get("rootfs"), kwargs.get("keep_child", False))
-        self._init_home(self.profile)
-        self._init_env(kwargs.get("path"), kwargs.get("clearenv", True))
-        self._init_system_id()
-        self._init_seccomp()
+        self._init_container(opts)
+        self._init_home(opts)
+        self._init_environment_variables(opts)
+        self._init_system_id(opts)
 
-    def _init_container(self, rootfs, keep_child):
+    def _init_container(self, opts: Options):
         """Base system"""
+        rootfs = opts["rootfs"]
         self.args: list[str] = [
             "--tmpfs", "/tmp",
             "--proc", "/proc",
@@ -116,11 +136,12 @@ class Bwrap:
             "--dir", "/var",
             "--dir", "/run",
             "--unsetenv", "TMUX",
+            "--seccomp", str(self.getfd(SECCOMP_BLOCK_TIOCSTI)),
         ]  # fmt: skip
 
         if rootfs is None:
             self.logger.info("Using host rootfs")
-            self.bind_many(
+            self.bind_all(
                 "/usr",
                 "/opt",
                 "/sys/block",
@@ -147,19 +168,21 @@ class Bwrap:
             # TODO: bind rootfs
             raise NotImplementedError()
 
-        if not keep_child:
+        if not opts["keep_child"]:
             self.logger.info("Container will be killed when bwrap terminates")
             self.args.append("--die-with-parent")
 
-    def _init_home(self, profile):
+    def _init_home(self, opts: Options):
         self.xdg_runtime_dir = Path(f"/run/user/{os.getuid()}")
         self.xdg_config_home = self.home / ".config"
         self.xdg_cache_home = self.home / ".cache"
         self.xdg_data_home = self.home / ".local" / "share"
         self.xdg_state_home = self.home / ".local" / "state"
-        if profile:
-            self.logger.info(f"using host {profile} as container home directory")
-            self.args.extend(("--bind", str(profile), str(self.home)))
+
+        if self.profile:
+            self.logger.info(f"using host {self.profile} as container home directory")
+            self.args.extend(("--bind", str(self.profile), str(self.home)))
+
         self.dir(
             self.home,
             self.xdg_runtime_dir,
@@ -169,20 +192,20 @@ class Bwrap:
             self.xdg_state_home,
             self.home / ".local" / "bin",
         )
-        self.home_bind_many(
-            ".config/user-dirs.dirs",
-            ".config/user-dirs.locale",
+
+        self.bind_all(
+            HOME / ".config/user-dirs.dirs",
+            HOME / ".config/user-dirs.locale",
         )
 
-    def _init_env(self, path: tuple | list, clearenv):
-        if clearenv:
-            # Do not inherit host env
+    def _init_environment_variables(self, opts: Options):
+        if opts["clearenv"]:
             self.logger.info("Environment variables cleared")
-            self.args.append("--clearenv")
+            self.clearenv()
 
         path = (
             p if Path(p).is_absolute() else str(self.home / p)
-            for p in path or self.DEFAULT_PATH
+            for p in opts["path"] or self.DEFAULT_PATH
         )
 
         self.setenv(
@@ -221,67 +244,28 @@ class Bwrap:
             "XDG_SESSION_TYPE",
         )
 
-    def _init_system_id(self):
+    def _init_system_id(self, opts: Options):
         """Initialize system identity, such as hostname and user name"""
-        if self.hostname != self.host_hostname:
+        if not opts["keep_hostname"]:
             self.logger.info(f"Hostname changed to {self.hostname}")
             self.args.extend([
                 "--unshare-uts",
                 "--hostname", self.hostname
             ])  # fmt: skip
-        hosts_file = dedent(f"""
-            127.0.0.1       localhost       localhost.localdomain
-            ::1             localhost       localhost.localdomain
-            127.0.0.1       {self.hostname}      {self.hostname}.localdomain
-            ::1             {self.hostname}      {self.hostname}.localdomain
-            127.0.0.1       {self.hostname}.local
-        """)
 
         self.logger.info(f"User name changed to {self.user}")
-        passwd_file = dedent(f"""
-            root:x:0:0::/root:/usr/bin/bash
-            bin:x:1:1::/:/usr/bin/nologin
-            daemon:x:2:2::/:/usr/bin/nologin
-            nobody:x:65534:65534:Kernel Overflow User:/:/usr/bin/nologin
-            {self.user}:x:{os.getuid()}:{os.getgid()}::{self.home}:{os.getenv("SHELL")}
-        """)
+        uid, gid = os.getuid(), os.getgid()
 
-        group_file = dedent(f"""
-            root:x:0:root
-            bin:x:1:daemon
-            nobody:x:65534:
-            daemon:x:2:bin
-            {self.user}:x:{os.getgid()}:
-        """)
-
-        nsswitch_file = dedent("""
-            passwd: files
-            group: files [SUCCESS=merge] systemd
-            shadow: files
-            gshadow: files
-            publickey: files
-            hosts: mymachines files myhostname dns
-            networks: files
-            protocols: files
-            services: files
-            ethers: files
-            rpc: files
-            netgroup: files
-        """)
-
-        self.file(nsswitch_file, "/etc/nsswitch.conf")
-        self.file(passwd_file, "/etc/passwd")
-        self.file(group_file, "/etc/group")
-        self.file(hosts_file, "/etc/hosts")
-        self.file(self.hostname, "/etc/hostname")
+        self.file(F_ETC_NSSWITCH, "/etc/nsswitch.conf")
+        self.file(
+            F_ETC_PASSWD.format(user=self.user, uid=uid, gid=gid, home=self.home),
+            "/etc/passwd",
+        )
+        self.file(F_ETC_GROUP.format(user=self.user, gid=gid), "/etc/group")
+        self.file(F_ETC_HOSTNAME.format(hostname=self.hostname), "/etc/hosts")
+        self.file(f"{self.hostname}\n", "/etc/hostname")
         self.file(f"{self.user}:100000:65536\n", "/etc/subuid")
         self.file(f"{self.user}:100000:65536\n", "/etc/subgid")
-
-    def _init_seccomp(self):
-        r, w = os.pipe()
-        os.set_inheritable(r, True)
-        os.write(w, SECCOMP_BLOCK_TIOCSTI)
-        self.args.extend(("--seccomp", str(r)))
 
     @staticmethod
     def format_bind_args(src: _PathLike, dest: _PathLike, mode):
@@ -292,25 +276,112 @@ class Bwrap:
             BindMode.DEV: ("--dev-bind-try", str(src), str(dest)),
         }[mode]
 
-    def symlink(self, *symlink_spec: tuple[str]):
-        for src, dest in symlink_spec:
-            self.args.extend(["--symlink", str(src), str(self.resolve_path(dest))])
+    def resolve_path(
+        self,
+        path: _PathLike | None,
+        translate=True,
+        anchor=None,
+    ) -> Path | None:
+        """Resolve path and translate to absolute container path
+
+        paths are translated as follows
+
+        | host path             | container path       |
+        | --------------------- | -------------------- |
+        | /home/host/path       | /home/container/path |
+        | /anywhere/else        | as is                |
+
+        Args:
+            path (Path): Path to translate
+            translate (bool, optional): translate to container path. Defaults to True
+            anchor(Path, optional): If specified, resolve relative paths against the anchor instead of the current working directory.
+        Returns:
+            Path: resolved path
+        """
+        if path is None:
+            return None
+
+        path = ensure_path(path)
+        if not path.is_absolute():
+            path = (anchor or self.host_cwd) / path
+
+        try:
+            return self.home / path.relative_to(HOME) if translate else path
+        except ValueError:
+            return path
+
+    BIND_OPTIONS = {
+        "mode": BindMode.RO,
+        "asis": False,
+        "src_anchor": None,
+        "dest_anchor": None,
+    }
 
     def bind(
         self,
         src: _PathLike,
-        dest: Optional[Path | str] = None,
-        mode: BindMode = BindMode.RO,
-    ):
-        dest = ensure_path(dest or src)
-        # dest relative to CWD
-        if not dest.is_absolute():
-            self.logger.debug("bind: resolve relative dest to host cwd")
-            dest = self.cwd / dest
+        dest: _PathLike | None = None,
+        **kwargs: Unpack[BindOpts],
+    ) -> None:
+        """Bind path mount from host to container
 
-        self.args.extend(
-            self.format_bind_args(str(src), str(self.resolve_path(dest)), mode)
+        Relative dest is treated as Path.cwd() / dest.
+
+        To prevent host path translation, set asis to True.
+
+        Args:
+            src (_PathLike): path on the host, must be absolute path.
+            dest (_PathLike | None, optional): default to src translated to container path.
+            mode (BindMode, optional):Bind mode, one of RW, RO or DEV (allow device file access). Defaults to read only
+            asis (bool, optional): if True, do not translate host path to container path. Defaults to False
+            dest_anchor (Path): against where relative dest resolves
+            src_anchor (Path): against where relative dest resolves
+        """
+        opts: BindOpts = self.BIND_OPTIONS | kwargs
+        src, dest = ensure_path(src, dest or src)
+
+        # resolve relative path
+        src = self.resolve_path(
+            src,
+            translate=False,
+            anchor=opts["src_anchor"],
         )
+        dest = self.resolve_path(
+            dest,
+            translate=not opts["asis"],
+            anchor=opts["dest_anchor"],
+        )
+
+        self.args.extend(self.format_bind_args(str(src), str(dest), opts["mode"]))
+
+    def bind_all(
+        self,
+        *binds: _PathLike | BindSpec,
+        **kwargs: Unpack[BindOpts],
+    ):
+        """Bind mutiple path to container
+
+        Each binding can be specified as a path or a dictionary that will be used as kwargs for bind
+
+        Args:
+            *specs (BindSpec)
+            mode (BindMode, optional): default `mode` for each bind
+            asis (bool, optional): default `asis` for each bind
+            dest_anchor (Path): against where relative dest resolves
+            src_anchor (Path): against where relative dest resolves
+        """
+        opts = self.BIND_OPTIONS | kwargs
+
+        for bind in binds:
+            if isinstance(bind, dict):
+                self.bind(**(opts | bind))
+            else:
+                self.bind(bind, **opts)
+
+    def symlink(self, *symlink_spec: tuple[_PathLike]):
+        for src, dest in symlink_spec:
+            src, dest = self.resolve_path(src), self.resolve_path(dest)
+            self.args.extend(["--symlink", str(src), str(dest)])
 
     def dir(self, *dirs: _PathLike):
         for dir in dirs:
@@ -320,108 +391,27 @@ class Bwrap:
         for fs in paths:
             self.args.extend(("--tmpfs", str(self.resolve_path(fs))))
 
+    @staticmethod
+    def getfd(content: str | bytes) -> int:
+        """Get file descriptor of content"""
+        r, w = os.pipe()
+        os.set_inheritable(r, True)
+        if isinstance(content, str):
+            content = content.encode()
+        os.write(w, content)
+        return r
+
     def file(self, content: str | bytes, dest: _PathLike, perms=None):
         """Copy from file descriptor to dest
 
         Default permission is 0666
         """
-        r, w = os.pipe()
-        os.set_inheritable(r, True)
-
-        if isinstance(content, str):
-            content = content.encode()
-
         if perms:
             self.args.extend(("--perms", str(perms)))
 
-        os.write(w, content)
-
-        self.args.extend(("--file", str(r), str(self.resolve_path(dest))))
-
-    def home_copy(
-        self,
-        src: _PathLike,
-        dest: Optional[_PathLike] = None,
-        override=False,
-    ):
-        """Copy file to container HOME"""
-        assert self.profile is not None
-
-        src = ensure_path(src)
-        if src.is_absolute() and not src.is_relative_to(self.host_home):
-            if dest is None:
-                raise ValueError(
-                    f"dest must be provided because src '{src}' is absolute path"
-                    " outside host home"
-                )
-        else:
-            src = self.host_home / src
-
-        if not src.exists():
-            self.logger.warning(f"copy: source '{src}' does not exist.")
-            return
-
-        dest = ensure_path(dest or src)
-        if not dest.is_absolute():
-            dest = self.profile / dest
-        elif dest.is_relative_to(self.host_home):
-            dest = self.profile / dest.relative_to(self.host_home)
-
-        if dest.exists():
-            if override:
-                self.logger.warning(f"copy: overriding '{dest}'")
-            else:
-                self.logger.warning(f"copy: destination '{dest}' already exists")
-                return
-        shutil.copytree(src, dest, dirs_exist_ok=True)
-
-    def home_bind(
-        self,
-        src: _PathLike,
-        dest: Optional[Path | str] = None,
-        mode: BindMode = BindMode.RO,
-    ):
-        """Bind many directories from host HOME to container HOME
-
-        Args:
-            src (Path): Relative path to host home, or absolute path
-            dest (Optional[Path], optional): If absolute, resolves to path relative to container home, Defaults to src
-            mode (BindMode, optional): Defaults to read only
-        """
-        src = ensure_path(src)
-        if not src.is_absolute():
-            src = self.host_home / src
-        dest = ensure_path(dest or src)
-        if not dest.is_absolute():
-            dest = self.home / dest
-        # source is relative to host HOME
-        self.bind(src, dest, mode)
-
-    def _multi_file_op(self, op, specs, **kwargs):
-        for spec in specs:
-            if isinstance(spec, dict):
-                op(**spec)
-            else:
-                op(spec, **kwargs)
-
-    def bind_many(self, *bind_specs: Union[Path | str, dict], mode=BindMode.RO):
-        """Bind many directories
-
-        Args:
-            mode (BindMode, optional): Bind mode for Path|str bind specs. Defaults to BindMode.RO.
-        """
-        self._multi_file_op(self.bind, bind_specs, mode=mode)
-
-    def home_bind_many(self, *bind_specs: Union[str, Path, dict], mode=BindMode.RO):
-        """Bind many directories from host HOME to container HOME
-
-        Args:
-            mode (BindMode, optional): bind mode for str|Path bind_spec. Defaults to BindMode.RO.
-        """
-        self._multi_file_op(self.home_bind, bind_specs, mode=mode)
-
-    def home_copy_many(self, *specs: Union[Path, str, dict], override=False):
-        self._multi_file_op(self.home_copy, specs, override=override)
+        self.args.extend(
+            ("--file", str(self.getfd(content)), str(self.resolve_path(dest)))
+        )
 
     def setenv(self, **kwargs: Any):
         for var, value in kwargs.items():
@@ -449,6 +439,29 @@ class Bwrap:
         if not net:
             self.args.append("--share-net")
 
+    def chdir(self, dest: _PathLike | None = None):
+        """Change directory to dest, or to CWD if no dest was given"""
+        if dest is None:
+            dest = self.cwd
+        self.args.extend(("--chdir", str(dest)))
+
+    def exec(self, command: list[str]):
+        """Start bwrap container with commands"""
+
+        # fix paths in command
+        host_home = str(HOME)
+        for i, v in enumerate(command):
+            if v[0] == "/" and host_home in v:
+                command[i] = str(self.resolve_path(v))
+
+        self._debug_print_args(command)
+
+        # launch the container
+        os.execvp(
+            "bwrap",
+            ["bwrap", "--args", str(self.getfd("\0".join(self.args)))] + command,
+        )
+
     def _debug_print_args(self, command):
         if self.logger.level <= logging.DEBUG:
             args = self.args
@@ -458,47 +471,6 @@ class Bwrap:
             ):
                 self.logger.debug(f"arg: {a}")
             self.logger.debug(f"arg: {command}")
-
-    def chdir(self, dest: Optional[Path | str] = None):
-        """Change directory to dest
-
-        Args:
-            dest (str, optional): if None, change to current working directory
-        """
-        if dest is None:
-            dest = self.cwd
-        self.args.extend(("--chdir", str(dest)))
-
-    def resolve_path(self, path: _PathLike) -> Path:
-        """Resolve path that contains host HOME to container HOME or base"""
-        path = ensure_path(path)
-
-        if path.is_relative_to(self.host_home):
-            path = self.home / path.relative_to(self.host_home)
-        return path
-
-    def exec(self, command: list[str]):
-        """Start bwrap container
-
-        Args:
-            command (list[str]): command to run
-        """
-
-        # fix paths in command
-        host_home = str(self.host_home)
-        for i, v in enumerate(command):
-            if v[0] == "/" and host_home in v:
-                command[i] = str(self.resolve_path(v))
-
-        self._debug_print_args(command)
-
-        # Pass arguments in a file descriptor
-        arg_fd, w = os.pipe()
-        os.set_inheritable(arg_fd, True)
-        os.write(w, "\0".join(self.args).encode())
-
-        # launch the container
-        os.execvp("bwrap", ["bwrap", "--args", str(arg_fd)] + command)
 
 
 class BwrapSandbox(Bwrap):
@@ -529,7 +501,7 @@ class BwrapSandbox(Bwrap):
 
     @feature()
     def dbus(self):
-        self.bind_many(
+        self.bind_all(
             "/run/dbus",
             self.xdg_runtime_dir / "bus",
             mode=BindMode.RW,
@@ -538,7 +510,7 @@ class BwrapSandbox(Bwrap):
 
     @feature(depends=("gpu",))
     def x11(self):
-        self.bind_many(
+        self.bind_all(
             "/tmp/.X11-unix",
             "/tmp/.ICE-unix",
             self.home / ".Xauthority",
@@ -549,7 +521,7 @@ class BwrapSandbox(Bwrap):
 
     @feature(depends=("gpu",))
     def wayland(self):
-        self.bind_many(
+        self.bind_all(
             *glob(str(self.xdg_runtime_dir / "wayland*")),
             mode=BindMode.RW,
         )
@@ -563,7 +535,7 @@ class BwrapSandbox(Bwrap):
 
     @feature()
     def audio(self):
-        self.bind_many(
+        self.bind_all(
             *glob(str(self.xdg_runtime_dir / "pulse*")),
             *glob(str(self.xdg_runtime_dir / "pipewire*")),
             {"src": "/dev/snd", "mode": BindMode.DEV},
@@ -572,18 +544,18 @@ class BwrapSandbox(Bwrap):
 
     @feature()
     def gpu(self, shader_cache=True):
-        self.bind_many(
+        self.bind_all(
             "/dev/dri",
             *glob("/dev/nvidia*"),
             mode=BindMode.DEV,
         )
         self.keepenv("__GL_THREADED_OPTIMIZATION")
         if shader_cache:
-            self.bind_many(
-                "$XDG_CACHE_HOME/mesa_shader_cache",
-                "$XDG_CACHE_HOME/radv_builtin_shaders64",
-                "$XDG_CACHE_HOME/nv",
-                "$XDG_CACHE_HOME/nvidia",
+            self.bind_all(
+                XDG_CACHE_HOME / "mesa_shader_cache",
+                XDG_CACHE_HOME / "radv_builtin_shaders64",
+                XDG_CACHE_HOME / "nv",
+                XDG_CACHE_HOME / "nvidia",
             )
 
     @feature(depends=("gpu",))
@@ -607,7 +579,7 @@ class BwrapSandbox(Bwrap):
 
     @feature(depends=("gpu", "wayland", "x11"))
     def mangohud(self, enable=True):
-        self.home_bind(".config/MangoHud")
+        self.bind(HOME / ".config/MangoHud")
         if enable:
             self.setenv(MANGOHUD=1)
 

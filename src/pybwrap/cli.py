@@ -20,6 +20,7 @@ LOGLEVEL_MAP = {
     "debug": logging.DEBUG,
 }
 
+
 bind_spec = re.compile(r"^(?P<src>[^:]+)(?::(?P<dest>[^:]*))?(?::(?P<mode>[rwd]))?$")
 
 
@@ -232,6 +233,8 @@ class BwrapArgumentParser(argparse.ArgumentParser):
 
 
 def main():
+    HOME = Path.home()
+
     logging.basicConfig(
         level=logging.ERROR,
         format="%(levelname)s:%(name)s: %(message)s",
@@ -279,7 +282,11 @@ def main():
         sandbox.locale(args.locale)
     if args.mangohud:
         sandbox.mangohud(enable=True)
-    sandbox.home_bind_many("downloads", "tmp", mode=BindMode.RW)
+    sandbox.bind_all(
+        HOME / "downloads",
+        HOME / "tmp",
+        mode=BindMode.RW,
+    )
     if args.bind:
         handle_binds(args.bind, sandbox.bind)
     sandbox.exec(args.command)

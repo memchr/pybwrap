@@ -1,12 +1,16 @@
-import shutil
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from pathlib import Path
 
-from pybwrap import Bwrap, BindMode
+
+from pybwrap import Bwrap, BindMode, HOME
 
 
 class TestBwrap(unittest.TestCase):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.cwd = Path.cwd()
+
     def setUp(self):
         """Set up a Bwrap instance with default parameters for testing."""
         self.bwrap = Bwrap(
@@ -40,8 +44,11 @@ class TestBwrap(unittest.TestCase):
     def test_bind(self):
         src, dest = "/src/path", "/dest/path"
         self.clear_args()
-        self.bwrap.bind(src, dest, BindMode.RO)
+        self.bwrap.bind(src, dest, mode=BindMode.RO)
         self.assertEqual(["--ro-bind-try", src, dest], self.bwrap.args)
+        self.clear_args()
+        self.bwrap.bind(src, dest, mode=BindMode.DEV)
+        self.assertEqual(["--dev-bind-try", src, dest], self.bwrap.args)
 
     def test_symlink(self):
         self.clear_args()
@@ -62,19 +69,53 @@ class TestBwrap(unittest.TestCase):
         expected_args = ["--unsetenv", "VAR1", "--unsetenv", "VAR2"]
         self.assertEqual(expected_args, self.bwrap.args)
 
-    def test_home_bind(self):
-        """Test that home_bind adds the correct arguments with home-relative paths."""
+    def test_bind_anchor(self):
         self.clear_args()
-        self.bwrap.home_bind(".cache", "dest_path")
+        self.bwrap.bind(HOME / ".cache")
+        self.assertEqual(
+            [
+                "--ro-bind-try",
+                str(Path.home() / ".cache"),
+                str(self.bwrap.home / ".cache"),
+            ],
+            self.bwrap.args,
+        )
+
+    def test_bind_anchor_home_with_dest(self):
+        self.clear_args()
+        self.bwrap.bind(HOME / ".cache", HOME / "device/b", mode=BindMode.DEV)
+        self.assertEqual(
+            [
+                "--dev-bind-try",
+                str(Path.home() / ".cache"),
+                str(self.bwrap.home / "device/b"),
+            ],
+            self.bwrap.args,
+        )
+
+    def test_bind_all_anchor_home(self):
+        self.clear_args()
+        self.bwrap.bind_all(
+            {"src": ".cache", "dest": "host_cache"},
+            ".local/low",
+            {"src": "bbbb", "mode": BindMode.RW},
+            src_anchor=HOME,
+            dest_anchor=self.bwrap.home,
+        )
         expected_args = [
             "--ro-bind-try",
-            str(Path.home() / ".cache"),
-            "/home/testuser/dest_path",
+            str(HOME / ".cache"),
+            "/home/testuser/host_cache",
+            "--ro-bind-try",
+            str(HOME / ".local/low"),
+            "/home/testuser/.local/low",
+            "--bind-try",
+            str(HOME / "bbbb"),
+            "/home/testuser/bbbb",
         ]
         self.assertEqual(expected_args, self.bwrap.args)
 
     def test_file_creation(self):
-        """Test file creation method to ensure args are populated with file descriptor commands."""
         content = "test content"
         dest = "/etc/testfile.conf"
         self.clear_args()
@@ -92,22 +133,12 @@ class TestBwrap(unittest.TestCase):
 
     def test_resolve_path(self):
         home = Path.home()
-        self.assertEqual(
-            self.bwrap.resolve_path(str(home)),
-            self.bwrap.home,
-        )
-        self.assertEqual(
-            self.bwrap.resolve_path(str(home / "src")),
-            self.bwrap.home / "src",
-        )
-        self.assertEqual(
-            self.bwrap.resolve_path("/src"),
-            Path("/src"),
-        )
-        self.assertEqual(
-            self.bwrap.resolve_path("src"),
-            Path("src"),
-        )
+        resolve_path = self.bwrap.resolve_path
+        self.assertEqual(resolve_path(home), self.bwrap.home)
+        self.assertEqual(resolve_path(home / "src"), self.bwrap.home / "src")
+        self.assertEqual(resolve_path("/src"), Path("/src"))
+        self.assertEqual(resolve_path("src"), self.bwrap.cwd / "src")
+        self.assertEqual(resolve_path("src", translate=False), Path.cwd() / "src")
 
     def test_bind_relative_path(self):
         self.clear_args()

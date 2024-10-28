@@ -5,9 +5,7 @@ import platformdirs
 from pybwrap import BindMode, BwrapSandbox
 import sys
 import os
-from pathlib import Path
-
-from pybwrap.cli import BwrapArgumentParser, handle_binds
+from pathlib import Path, HOME, BwrapArgumentParser, handle_binds
 
 
 DEFAULT_WINE_PREFIX = Path.home() / ".wine"
@@ -112,10 +110,11 @@ def main():
         "WINEFSYNC",
         "WINEDEBUG",
     )
-    sandbox.home_bind_many(
-        "downloads",
-        "tmp",
-        ".local/bin",
+    sandbox.bind_all(
+        HOME / "downloads",
+        HOME / "tmp",
+        {"src": HOME / ".local/bin", "mode": BindMode.RO},
+        mode=BindMode.RW,
     )
     sandbox.desktop()
     sandbox.mangohud(enable=args.mangohud)
@@ -154,7 +153,7 @@ def main():
             STEAM_COMPAT_CLIENT_INSTALL_PATH=str(STEAM_PATH),
             STEAM_COMPAT_DATA_PATH=str(sandbox.resolve_path(prefix)),
         )
-        sandbox.bind_many(
+        sandbox.bind_all(
             str(PROTON_PATH),
             prefix,
             mode=BindMode.RW,
