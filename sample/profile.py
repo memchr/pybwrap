@@ -32,8 +32,8 @@ def main():
     g.add_argument("-l", "--list", action="store_true", help="List all profiles")
     parser.add_args_command()
     parser.add_argument(
-        "--create",
         "-C",
+        "--create",
         action="store_true",
         help="Create the profile if it doesn't exist",
     )
