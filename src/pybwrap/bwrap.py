@@ -1,6 +1,7 @@
 from enum import Enum
 from glob import glob
 from pathlib import Path
+import sys
 from textwrap import dedent
 from typing import Any, Callable, Self, TypedDict, Unpack
 import functools
@@ -10,12 +11,14 @@ import socket
 
 from pybwrap._secomp import SECCOMP_BLOCK_TIOCSTI
 from pybwrap.constants import (
+    ETC_WHITELIST,
     F_ETC_GROUP,
     F_ETC_HOSTNAME,
     F_ETC_NSSWITCH,
     F_ETC_PASSWD,
     HOME,
     XDG_CACHE_HOME,
+    XDG_RUNTIME_DIR,
 )
 from pybwrap.path import _PathLike, ensure_path
 
@@ -39,25 +42,6 @@ class BindSpec(BindOpts):
 
 
 class Bwrap:
-    DEFAULT_ETC_BINDS = (
-        "bash.bashrc", "bash_completion.d", "binfmt.d", "bluetooth",
-        "ca-certificates", "conf.d", "dconf", "default", "environment",
-        "ethertypes", "fonts", "fuse.conf", "gai.conf", "grc.conf", "grc.fish",
-        "grc.zsh",  "gtk-2.0", "gtk-3.0", "host.conf", "inputrc", "issue",
-        "java-openjdk", "ld.so.cache", "ld.so.conf", "ld.so.conf.d",
-        "libao.conf", "libinput", "libnl", "libpaper.d", "libva.conf",
-        "locale.conf", "localtime", "login.defs", "lsb-release", "man_db.conf",
-        "mime.types", "mono", "mtab", "named.conf", "machine-id", "ndctl",
-        "ndctl.conf.d", "odbc.ini", "odbcinst.ini", "openldap", "openmpi",
-        "openpmix", "os-release", "pam.d", "papersize", "paru.conf", "pipewire",
-        "pkcs11", "povray", "profile", "profile.d", "protocols", "pulse",
-        "rc_keymaps", "rc_maps.cfg", "request-key.conf", "request-key.d",
-        "resolv.conf", "sane.d", "sasl2", "securetty", "security", "sensors.d",
-        "sensors3.conf", "services", "shells", "ssl", "timidity", "tmpfiles.d",
-        "tpm2-tss", "trusted-key.key", "ts.conf", "vdpau_wrapper.cfg", "vulkan",
-        "wgetrc", "whois.conf", "wpa_supplicant", "xattr.conf", "xdg",
-        "xinetd.d", "xml", "libreoffice", "java21-openjdk", "java11-openjdk"
-    )  # fmt: skip
     DEFAULT_PATH = (
         ".local/bin",
         "go/bin",
@@ -88,7 +72,7 @@ class Bwrap:
         "keep_user": False,
         "keep_hostname": False,
         "profile": None,
-        "etc_binds": DEFAULT_ETC_BINDS,
+        "etc_binds": ETC_WHITELIST,
         "clearenv": True,
         "path": DEFAULT_PATH,
         "keep_child": False,
@@ -141,7 +125,7 @@ class Bwrap:
 
         if rootfs is None:
             self.logger.info("Using host rootfs")
-            self.bind_all(
+            binds = (
                 "/usr",
                 "/opt",
                 "/sys/block",
@@ -149,13 +133,15 @@ class Bwrap:
                 "/sys/class",
                 "/sys/dev",
                 "/sys/devices",
-                {"src": "/dev/fuse", "mode": BindMode.DEV},
                 "/var/empty",
                 "/var/cache/man",
                 "/var/lib/alsa",
                 "/run/systemd/resolve",
-                *(f"/etc/{e}" for e in self.etc_binds),
-            )
+            ) + (self.etc_binds or ("/etc",))
+            for v in binds:
+                self.args.extend(("--ro-bind-try", v, v))
+            self.bind("/dev/fuse", mode=BindMode.DEV)
+
             self.symlink(
                 ("/usr/lib", "/lib"),
                 ("/usr/lib", "/lib64"),
@@ -256,16 +242,17 @@ class Bwrap:
         self.logger.info(f"User name changed to {self.user}")
         uid, gid = os.getuid(), os.getgid()
 
-        self.file(F_ETC_NSSWITCH, "/etc/nsswitch.conf")
-        self.file(
+        cp = self.bind_data
+        cp(F_ETC_NSSWITCH, "/etc/nsswitch.conf")
+        cp(
             F_ETC_PASSWD.format(user=self.user, uid=uid, gid=gid, home=self.home),
             "/etc/passwd",
         )
-        self.file(F_ETC_GROUP.format(user=self.user, gid=gid), "/etc/group")
-        self.file(F_ETC_HOSTNAME.format(hostname=self.hostname), "/etc/hosts")
-        self.file(f"{self.hostname}\n", "/etc/hostname")
-        self.file(f"{self.user}:100000:65536\n", "/etc/subuid")
-        self.file(f"{self.user}:100000:65536\n", "/etc/subgid")
+        cp(F_ETC_GROUP.format(user=self.user, gid=gid), "/etc/group")
+        cp(F_ETC_HOSTNAME.format(hostname=self.hostname), "/etc/hosts")
+        cp(f"{self.hostname}\n", "/etc/hostname")
+        cp(f"{self.user}:100000:65536\n", "/etc/subuid")
+        cp(f"{self.user}:100000:65536\n", "/etc/subgid")
 
     @staticmethod
     def format_bind_args(src: _PathLike, dest: _PathLike, mode):
@@ -401,17 +388,47 @@ class Bwrap:
         os.write(w, content)
         return r
 
-    def file(self, content: str | bytes, dest: _PathLike, perms=None):
-        """Copy from file descriptor to dest
+    def file(
+        self,
+        content: str | bytes,
+        dest: _PathLike,
+        perms=None,
+        anchor=None,
+        asis=False,
+    ):
+        """Copy from file descriptor to path in container
 
-        Default permission is 0666
+        Args:
+            content (str | bytes): File content
+            dest (_PathLike): File location
+            perms (_type_, optional): Permission. Defaults to 0666
         """
+        dest = self.resolve_path(dest, anchor=anchor, translate=not asis)
+
         if perms:
             self.args.extend(("--perms", str(perms)))
 
-        self.args.extend(
-            ("--file", str(self.getfd(content)), str(self.resolve_path(dest)))
-        )
+        self.args.extend(("--file", str(self.getfd(content)), str(dest)))
+
+    def bind_data(
+        self,
+        content: str | bytes,
+        dest: _PathLike,
+        perms=None,
+        anchor=None,
+        mode=BindMode.RO,
+        asis=False,
+    ):
+        """Bind data from file descriptor to path in container"""
+        dest = self.resolve_path(dest, anchor=anchor, translate=not asis)
+
+        if perms:
+            self.args.extend(("--perms", str(perms)))
+
+        if mode == BindMode.RO:
+            self.args.extend(("--ro-bind-data", str(self.getfd(content)), str(dest)))
+        elif mode == BindMode.RW:
+            self.args.extend(("--bind-data", str(self.getfd(content)), str(dest)))
 
     def setenv(self, **kwargs: Any):
         for var, value in kwargs.items():
@@ -503,7 +520,7 @@ class BwrapSandbox(Bwrap):
     def dbus(self):
         self.bind_all(
             "/run/dbus",
-            self.xdg_runtime_dir / "bus",
+            XDG_RUNTIME_DIR / "bus",
             mode=BindMode.RW,
         )
         self.keepenv("DBUS_SESSION_BUS_ADDRESS")
@@ -514,7 +531,7 @@ class BwrapSandbox(Bwrap):
             "/tmp/.X11-unix",
             "/tmp/.ICE-unix",
             self.home / ".Xauthority",
-            *glob(str(self.xdg_runtime_dir / "ICE*")),
+            *glob(str(XDG_RUNTIME_DIR / "ICE*")),
             mode=BindMode.RW,
         )
         self.keepenv("DISPLAY", "XAUTHORITY")
@@ -522,7 +539,7 @@ class BwrapSandbox(Bwrap):
     @feature(depends=("gpu",))
     def wayland(self):
         self.bind_all(
-            *glob(str(self.xdg_runtime_dir / "wayland*")),
+            *glob(str(XDG_RUNTIME_DIR / "wayland*")),
             mode=BindMode.RW,
         )
         self.setenv(
@@ -536,8 +553,8 @@ class BwrapSandbox(Bwrap):
     @feature()
     def audio(self):
         self.bind_all(
-            *glob(str(self.xdg_runtime_dir / "pulse*")),
-            *glob(str(self.xdg_runtime_dir / "pipewire*")),
+            *glob(str(XDG_RUNTIME_DIR / "pulse*")),
+            *glob(str(XDG_RUNTIME_DIR / "pipewire*")),
             {"src": "/dev/snd", "mode": BindMode.DEV},
             mode=BindMode.RW,
         )
@@ -590,4 +607,6 @@ class BwrapSandbox(Bwrap):
             LANG=newlocale,
             LC_ALL=newlocale,
         )
-        self.file(dedent(f"LANG={newlocale}\nLC_TIME={newlocale}"), "/etc/locale.conf")
+        self.bind_data(
+            dedent(f"LANG={newlocale}\nLC_TIME={newlocale}"), "/etc/locale.conf"
+        )
