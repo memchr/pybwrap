@@ -41,7 +41,8 @@ def main():
     if args.list:
         logger.info("listing profiles")
         for d in PROFILE_STORAGE.iterdir():
-            print(str(d.name))
+            if d.is_dir() and not d.name.startswith("."):
+                print(str(d.name))
         return 0
 
     if not args.profile:
