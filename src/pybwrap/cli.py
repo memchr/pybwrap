@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 from typing import Callable
 
+
 from pybwrap.constants import ETC_WHITELIST
 
 from . import BwrapSandbox, BindMode
@@ -35,7 +36,7 @@ def handle_binds(binds: list[str], callback: Callable):
         callback(src, dest, mode=mode)
 
 
-class BwrapArgs:
+class BwrapArgs(argparse.Namespace):
     dbus: bool
     x11: bool
     wayland: bool
@@ -102,7 +103,7 @@ class BwrapArgumentParser(argparse.ArgumentParser):
         self.default_cmd = default_cmd
 
     def parse_args(self, *args, **kwargs) -> BwrapArgs:
-        args: BwrapArgumentParser.BwrapArgs = super().parse_args(*args, **kwargs)
+        args: BwrapArgs = super().parse_args(*args, **kwargs)
 
         if len(args.command) == 0:
             if self.default_cmd:
