@@ -38,6 +38,8 @@ def main():
     parser.add_args_command()
     parser.add_flag_bind()
     parser.add_flag_etc()
+    parser.add_flag_keep_user()
+    parser.add_flag_user()
     parser.add_argument(
         "-C",
         "--create",
@@ -69,6 +71,8 @@ def main():
         hostname=profile,
         loglevel=args.loglevel,
         path=(".bin",) + Bwrap.DEFAULT_PATH,
+        keep_user=args.keep_user,
+        user=args.user,
     )
     sandbox.resolve_path
     logger.setLevel(args.loglevel)
