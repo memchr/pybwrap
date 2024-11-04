@@ -1,6 +1,6 @@
 [project]
 name = "pybwrap"
-version = "0.0.2"
+version = "0.0.3"
 description = "Bubblewrap python bindings"
 readme = "README.md"
 dependencies = []
