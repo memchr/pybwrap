@@ -1,1 +1,1 @@
-# Bubblewrap python bindings
+# python bwrap scripts
