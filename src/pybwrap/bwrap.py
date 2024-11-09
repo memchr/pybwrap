@@ -585,6 +585,7 @@ class BwrapSandbox(Bwrap):
                 XDG_CACHE_HOME / "radv_builtin_shaders64",
                 XDG_CACHE_HOME / "nv",
                 XDG_CACHE_HOME / "nvidia",
+                mode=BindMode.RW,
             )
 
     @feature(depends=("gpu",))
