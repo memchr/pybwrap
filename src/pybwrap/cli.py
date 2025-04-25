@@ -1,7 +1,6 @@
 import argparse
 import logging
 import os
-import re
 from pathlib import Path
 from typing import Callable
 
@@ -13,6 +12,7 @@ from . import BwrapSandbox, BindMode
 BINDMODE_MAP = {
     "r": BindMode.RO,
     "w": BindMode.RW,
+    "rw": BindMode.RW,
     "d": BindMode.DEV,
 }
 
@@ -24,15 +24,18 @@ LOGLEVEL_MAP = {
 }
 
 
-bind_spec = re.compile(r"^(?P<src>[^:]+)(?::(?P<dest>[^:]*))?(?::(?P<mode>[rwd]))?$")
-
-
-def handle_binds(binds: list[str], callback: Callable):
+def handle_binds(binds: list[str], callback: Callable[..., None]):
     for bind in binds:
-        m = bind_spec.match(bind)
-        src = Path(m.group("src"))
-        dest = Path(m.group("dest") or src)
-        mode = BINDMODE_MAP[m.group("mode") or "r"]
+        param = bind.split(":")
+        src = Path(param[0])
+        try:
+            dest = Path(param[1])
+        except IndexError:
+            dest = src
+        try:
+            mode = BINDMODE_MAP[param[2]]
+        except IndexError:
+            mode = BindMode.RO
         callback(src, dest, mode=mode)
 
 

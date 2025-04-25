@@ -132,6 +132,7 @@ class Bwrap:
                 "/sys/class",
                 "/sys/dev",
                 "/sys/devices",
+                "/sys/module",
                 "/var/empty",
                 "/var/cache/man",
                 "/var/lib/alsa",
